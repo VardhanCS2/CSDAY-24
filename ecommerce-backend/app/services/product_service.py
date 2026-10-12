@@ -2,6 +2,7 @@ from sqlalchemy.orm import Session
 
 from sqlalchemy import case, desc, func, literal, literal_column, or_, text
 
+from app.models.order_item import OrderItem
 from app.models.product import Product
 from app.core.config import settings
 
@@ -17,6 +18,10 @@ from app.crud.product import (
 )
 
 from app.utils.pagination import paginate
+
+
+class ProductHasOrderHistoryError(Exception):
+    """Raised when deleting a product would break historical order references."""
 
 
 
@@ -263,6 +268,17 @@ def remove_product(
 
     if not product:
         return False
+
+    has_order_history = (
+        db.query(OrderItem.id)
+        .filter(OrderItem.product_id == product_id)
+        .first()
+    )
+    if has_order_history:
+        raise ProductHasOrderHistoryError(
+            "This product is part of an existing order and cannot be deleted. "
+            "Set its stock to 0 to stop new sales while preserving order history."
+        )
 
     return delete_product(
         db,

@@ -28,9 +28,9 @@ export function ProductImage({ product, className = '', loading = 'lazy', fetchP
     ? product.image_url.replace(/^\/?app\//, '').replace(/^\//, '')
     : null
   const imageId = productImages.find(([pattern]) => pattern.test(product.name))?.[1] ?? 'photo-1490312278390-ab64016e0aa9'
-  const fallbackImage = `https://images.unsplash.com/${imageId}?auto=format&fit=crop&w=640&q=75`
+  const fallbackImage = `https://images.unsplash.com/${imageId}?auto=format&fit=max&w=900&q=80`
   const fallbackSrcSet = [320, 640, 900]
-    .map((width) => `https://images.unsplash.com/${imageId}?auto=format&fit=crop&w=${width}&q=75 ${width}w`)
+    .map((width) => `https://images.unsplash.com/${imageId}?auto=format&fit=max&w=${width}&q=80 ${width}w`)
     .join(', ')
   const imageUrl = remoteImage || (storedPath ? `/api/${storedPath}` : fallbackImage)
 

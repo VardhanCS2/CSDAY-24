@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import { ImagePlus, Link2, Upload } from 'lucide-react'
+import { ImagePlus, Link2, Sparkles, Upload } from 'lucide-react'
 import { toast } from 'sonner'
 import { ProductImage } from '@/components/ProductImage'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { errorMessage } from '@/api/client'
+import { api, errorMessage, responseData } from '@/api/client'
 import { productSchema } from '@/lib/validation'
 import type { Product } from '@/types/models'
 import type { z } from 'zod'
@@ -33,6 +33,7 @@ export function AdminProductEditor({ product, saving, onCancel, onSave }: AdminP
   const [imageMode, setImageMode] = useState<'url' | 'upload'>(product?.image_url?.startsWith('http') ? 'url' : 'upload')
   const [image, setImage] = useState<File | null>(null)
   const [imageError, setImageError] = useState('')
+  const [generatingDescription, setGeneratingDescription] = useState(false)
   const [previewStatus, setPreviewStatus] = useState<'pending' | 'ready' | 'failed'>('pending')
   const uploadPreviewRef = useRef<HTMLImageElement>(null)
   const urlIsValid = productSchema.shape.image_url.safeParse(imageUrl).success
@@ -71,6 +72,34 @@ export function AdminProductEditor({ product, saving, onCancel, onSave }: AdminP
     })
   }
 
+  async function generateDescription() {
+    const numericPrice = Number(price)
+    if (!name.trim() || !Number.isFinite(numericPrice) || numericPrice < 0) {
+      const message = 'Enter a product name and valid price before generating a description.'
+      setImageError(message)
+      toast.error(message)
+      return
+    }
+    setGeneratingDescription(true)
+    setImageError('')
+    try {
+      const response = await api.post('/ai/products/generate-description', {
+        name: name.trim(),
+        price: numericPrice,
+        details: description,
+      })
+      const result = responseData<{ description: string }>(response)
+      setDescription(result.description)
+      toast.success('Description draft generated. Review it before saving.')
+    } catch (error) {
+      const message = errorMessage(error)
+      setImageError(message)
+      toast.error(message)
+    } finally {
+      setGeneratingDescription(false)
+    }
+  }
+
   const preview = imageMode === 'url'
     ? imageUrl
       ? <img className="admin-image-preview" src={imageUrl} alt="Product image preview" loading="lazy" decoding="async" onLoad={() => setPreviewStatus('ready')} onError={() => setPreviewStatus('failed')} />
@@ -87,7 +116,13 @@ export function AdminProductEditor({ product, saving, onCancel, onSave }: AdminP
         <label className="form-field"><span>Product name</span><Input value={name} onChange={(event) => setName(event.target.value)} required maxLength={100} /></label>
         <label className="form-field"><span>Price</span><Input type="number" min="0" step="0.01" value={price} onChange={(event) => setPrice(event.target.value)} required /></label>
         <label className="form-field"><span>Stock</span><Input type="number" min="0" step="1" value={stock} onChange={(event) => setStock(event.target.value)} required /></label>
-        <label className="form-field admin-editor-description"><span>Description</span><Input value={description} onChange={(event) => setDescription(event.target.value)} maxLength={2000} /></label>
+        <div className="form-field admin-editor-description">
+          <label htmlFor="admin-product-description">Description</label>
+          <Input id="admin-product-description" value={description} onChange={(event) => setDescription(event.target.value)} maxLength={2000} />
+          <Button type="button" variant="outline" size="sm" onClick={() => void generateDescription()} disabled={generatingDescription || saving || !name.trim() || !price}>
+            <Sparkles size={14} /> {generatingDescription ? 'Generating...' : 'Generate with AI'}
+          </Button>
+        </div>
       </div>
       <fieldset className="admin-image-picker">
         <legend>Product image</legend>

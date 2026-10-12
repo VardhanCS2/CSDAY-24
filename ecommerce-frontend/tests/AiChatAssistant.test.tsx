@@ -3,8 +3,13 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 import { AiChatAssistant } from '@/components/AiChatAssistant'
+import { api } from '@/api/client'
 
-afterEach(() => vi.unstubAllGlobals())
+afterEach(() => {
+  vi.unstubAllGlobals()
+  vi.restoreAllMocks()
+  localStorage.clear()
+})
 
 describe('AI shopping assistant', () => {
   it('opens as a separate guest-facing assistant from live support', async () => {
@@ -39,6 +44,7 @@ describe('AI shopping assistant', () => {
       }),
     })
     vi.stubGlobal('fetch', fetchMock)
+    localStorage.setItem('access_token', 'test-access-token')
     render(<MemoryRouter><AiChatAssistant /></MemoryRouter>)
     await user.click(screen.getByRole('button', { name: 'Open AI shopping assistant' }))
     await user.type(screen.getByRole('textbox', { name: 'Ask about products' }), 'Find a bottle')
@@ -49,7 +55,11 @@ describe('AI shopping assistant', () => {
     expect(screen.getByRole('link', { name: /Reusable glass bottle/ })).toHaveAttribute('href', '/product/12')
     expect(fetchMock).toHaveBeenCalledWith(
       '/api/ai/chat/stream',
-      expect.objectContaining({ method: 'POST', credentials: 'omit' }),
+      expect.objectContaining({
+        method: 'POST',
+        credentials: 'omit',
+        headers: expect.objectContaining({ Authorization: 'Bearer test-access-token' }),
+      }),
     )
   })
 
@@ -93,5 +103,25 @@ describe('AI shopping assistant', () => {
     expect(screen.getByRole('list')).toBeInTheDocument()
     expect(screen.getByRole('table')).toBeInTheDocument()
     expect(screen.queryByRole('img')).not.toBeInTheDocument()
+  })
+
+  it('invokes the catalogue tool when product-search agent mode is enabled', async () => {
+    const user = userEvent.setup()
+    vi.spyOn(api, 'post').mockResolvedValue({
+      data: {
+        reply: 'A bottle is available [Product ID: 8].',
+        sources: [{ product_id: 8, name: 'Water bottle', price: 10, stock: 4 }],
+        label: 'Relevant catalogue sources',
+      },
+    } as never)
+    render(<MemoryRouter><AiChatAssistant /></MemoryRouter>)
+    await user.click(screen.getByRole('button', { name: 'Open AI shopping assistant' }))
+    await user.click(screen.getByRole('button', { name: 'Enable product-search agent' }))
+    await user.type(screen.getByRole('textbox', { name: 'Ask about products' }), 'Find a bottle')
+    await user.click(screen.getByRole('button', { name: 'Send message to AI assistant' }))
+
+    expect(await screen.findByText('A bottle is available [Product ID: 8].')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /Water bottle/ })).toHaveAttribute('href', '/product/8')
+    expect(api.post).toHaveBeenCalledWith('/ai/agent', { message: 'Find a bottle' })
   })
 })

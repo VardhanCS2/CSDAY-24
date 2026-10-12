@@ -99,7 +99,7 @@ export interface ApiEnvelope<T> {
 
 export interface ProductFilters {
   search?: string
-  search_mode?: 'hybrid' | 'full_text' | 'fuzzy'
+  search_mode?: 'hybrid' | 'full_text' | 'fuzzy' | 'semantic'
   min_price?: string
   max_price?: string
   stock_available?: boolean

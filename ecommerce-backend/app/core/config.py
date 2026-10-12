@@ -44,6 +44,10 @@ class Settings(BaseSettings):
     AI_GROQ_MODEL: str = "openai/gpt-oss-120b"
     AI_GEMINI_MODEL: str = "gemini-3.8-flash"
     AI_MISTRAL_MODEL: str = "mistral-small-latest"
+    AI_GEMINI_EMBEDDING_MODEL: str = "gemini-embedding-001"
+    AI_MISTRAL_EMBEDDING_MODEL: str = "mistral-embed"
+    AI_EMBEDDING_PROVIDER_ORDER: str = "mistral,gemini"
+    AI_RESPONSE_CACHE_TTL_SECONDS: Annotated[int, Field(ge=60, le=86400)] = 3600
     AI_VECTOR_STORE_PATH: str = "private_files/chroma"
     PRODUCT_SEARCH_SIMILARITY_THRESHOLD: Annotated[float, Field(ge=0.0, le=1.0)] = Field(
         default=0.35,

@@ -3,6 +3,8 @@ from fastapi import (
     Depends,
     HTTPException,
     Query,
+    Request,
+    Response,
     UploadFile,
     File,
     Form
@@ -14,6 +16,7 @@ from sqlalchemy.orm import Session
 
 
 from app.database.database import get_db
+from app.core.rate_limit import ai_rate_limit_key, limiter
 
 
 from app.schemas.product import (
@@ -23,11 +26,17 @@ from app.schemas.product import (
 
 
 from app.services.product_service import (
+    ProductHasOrderHistoryError,
     create_new_product,
     get_all_products,
     get_single_product,
     update_existing_product,
     remove_product
+)
+from app.services.ai_features_service import (
+    AIServiceUnavailableError,
+    moderate_content,
+    semantic_search_products,
 )
 
 
@@ -101,6 +110,42 @@ def get_products(
     )
 
 
+@router.get("/semantic-search")
+@limiter.limit("20/minute", key_func=ai_rate_limit_key)
+def search_products_semantically(
+    request: Request,
+    response: Response,
+    q: str = Query(min_length=2, max_length=200),
+    page: int = Query(default=1, ge=1),
+    limit: int = Query(default=10, ge=1, le=100),
+    min_price: float | None = Query(default=None, ge=0),
+    max_price: float | None = Query(default=None, ge=0),
+    stock_available: bool | None = None,
+    db: Session = Depends(get_db),
+):
+    if min_price is not None and max_price is not None and min_price > max_price:
+        raise HTTPException(status_code=422, detail="Minimum price cannot exceed maximum price.")
+    try:
+        products = semantic_search_products(
+            db,
+            q.strip(),
+            min_price=min_price,
+            max_price=max_price,
+            stock_available=stock_available,
+        )
+    except AIServiceUnavailableError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+    offset = (page - 1) * limit
+    return success_response(
+        data={
+            "page": page,
+            "limit": limit,
+            "total": len(products),
+            "items": products[offset : offset + limit],
+        },
+        message="Semantic product search completed",
+    )
+
 
 @router.get("/{product_id}")
 def get_product(
@@ -158,11 +203,14 @@ def validate_image_url(image_url: str | None) -> str | None:
 # Admin create product
 
 @router.post("/")
+@limiter.limit("12/minute", key_func=ai_rate_limit_key)
 def create_product(
+    request: Request,
+    response: Response,
 
     name: str = Form(...),
 
-    description: str = Form(None),
+    description: str | None = Form(default=None, max_length=2000),
 
     price: float = Form(...),
 
@@ -180,6 +228,17 @@ def create_product(
 
     if image is not None and image_url and image_url.strip():
         raise HTTPException(status_code=400, detail="Choose either an image URL or an uploaded image, not both.")
+
+    if description and description.strip():
+        try:
+            moderation = moderate_content(description)
+        except AIServiceUnavailableError as error:
+            raise HTTPException(status_code=503, detail=str(error)) from error
+        if not moderation.approved:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Product description was rejected by content moderation ({moderation.category}).",
+            )
 
     image_path = None
 
@@ -252,7 +311,10 @@ def upload_product_image(
 
 
 @router.put("/{product_id}")
+@limiter.limit("12/minute", key_func=ai_rate_limit_key)
 def update_product(
+    request: Request,
+    response: Response,
 
     product_id: int,
 
@@ -263,6 +325,21 @@ def update_product(
     current_user: User = Depends(get_current_admin)
 
 ):
+    if (
+        "description" in product_data.model_fields_set
+        and product_data.description
+        and product_data.description.strip()
+    ):
+        try:
+            moderation = moderate_content(product_data.description)
+        except AIServiceUnavailableError as error:
+            raise HTTPException(status_code=503, detail=str(error)) from error
+        if not moderation.approved:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Product description was rejected by content moderation ({moderation.category}).",
+            )
+
     if "image_url" in product_data.model_fields_set:
         product_data.image_url = validate_image_url(product_data.image_url)
 
@@ -309,13 +386,13 @@ def delete_product(
 
 ):
 
-    deleted = remove_product(
-
-        db,
-
-        product_id
-
-    )
+    try:
+        deleted = remove_product(
+            db,
+            product_id
+        )
+    except ProductHasOrderHistoryError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
 
 
     if not deleted:

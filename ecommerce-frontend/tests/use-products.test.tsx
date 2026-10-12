@@ -56,4 +56,24 @@ describe('product query hook with mocked API', () => {
     const { result } = renderHook(() => useProducts(), { wrapper: createWrapper() })
     await waitFor(() => expect(result.current.isError).toBe(true))
   })
+
+  it('routes semantic queries through the embedding search endpoint', async () => {
+    server.use(http.get('/api/products/semantic-search', ({ request }) => {
+      const url = new URL(request.url)
+      expect(url.searchParams.get('q')).toBe('something for a warm drink')
+      expect(url.searchParams.get('page')).toBe('1')
+      return HttpResponse.json<ApiEnvelope<Paginated<Product>>>({
+        success: true,
+        message: 'ok',
+        data: { page: 1, limit: 12, total: 1, items: [product] },
+      })
+    }))
+
+    const { result } = renderHook(
+      () => useProducts({ search: 'something for a warm drink', search_mode: 'semantic' }),
+      { wrapper: createWrapper() },
+    )
+
+    await waitFor(() => expect(result.current.data?.pages[0]?.items[0]?.id).toBe(7))
+  })
 })

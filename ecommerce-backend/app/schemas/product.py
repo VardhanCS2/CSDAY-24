@@ -1,13 +1,13 @@
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 
 class ProductCreate(BaseModel):
 
     name: str
-    description: str | None = None
+    description: str | None = Field(default=None, max_length=2000)
     price: float
     stock: int
     image_url: str | None = None
@@ -17,7 +17,7 @@ class ProductCreate(BaseModel):
 class ProductUpdate(BaseModel):
 
     name: str | None = None
-    description: str | None = None
+    description: str | None = Field(default=None, max_length=2000)
     price: float | None = None
     stock: int | None = None
     image_url: str | None = None

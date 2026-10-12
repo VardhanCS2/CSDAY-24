@@ -9,9 +9,18 @@ export function useProducts(filters: ProductFilters = {}) {
     queryKey: ['products', filters],
     initialPageParam: 1,
     queryFn: async ({ pageParam }) => {
-      const response = await api.get('/products/', {
-        params: { ...filters, page: pageParam, limit: PAGE_SIZE },
-      })
+      const semantic = filters.search_mode === 'semantic' && Boolean(filters.search)
+      const params = semantic
+        ? {
+            q: filters.search,
+            min_price: filters.min_price,
+            max_price: filters.max_price,
+            stock_available: filters.stock_available,
+            page: pageParam,
+            limit: PAGE_SIZE,
+          }
+        : { ...filters, page: pageParam, limit: PAGE_SIZE }
+      const response = await api.get(semantic ? '/products/semantic-search' : '/products/', { params })
       return responseData<Paginated<Product>>(response)
     },
     getNextPageParam: (lastPage) =>

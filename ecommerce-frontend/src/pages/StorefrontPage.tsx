@@ -45,14 +45,16 @@ export function StorefrontPage() {
   const [maxPrice, setMaxPrice] = useState('')
   const [stock, setStock] = useState<'all' | 'in' | 'out'>('all')
   const [sort, setSort] = useState<'recommended' | 'price-low' | 'price-high' | 'name'>('recommended')
+  const [searchMode, setSearchMode] = useState<'hybrid' | 'semantic'>('hybrid')
   const [addingId, setAddingId] = useState<number | null>(null)
   const debouncedSearch = useDebouncedValue(search.trim())
   const filters = useMemo(() => ({
     ...(debouncedSearch ? { search: debouncedSearch } : {}),
+    ...(debouncedSearch ? { search_mode: searchMode } : {}),
     ...(minPrice !== '' ? { min_price: minPrice } : {}),
     ...(maxPrice !== '' ? { max_price: maxPrice } : {}),
     ...(stock !== 'all' ? { stock_available: stock === 'in' } : {}),
-  }), [debouncedSearch, minPrice, maxPrice, stock])
+  }), [debouncedSearch, minPrice, maxPrice, stock, searchMode])
   const productsQuery = useProducts(filters)
   const { add } = useCartActions()
   const { hasNextPage, isFetchingNextPage, fetchNextPage } = productsQuery
@@ -136,6 +138,7 @@ export function StorefrontPage() {
           <div className="filter-controls">
             <label className="compact-filter"><span>Price</span><Input aria-label="Minimum price" type="number" min="0" placeholder="Min" value={minPrice} onChange={(event) => updateFilter(setMinPrice, event.target.value)} /><span className="price-divider">to</span><Input aria-label="Maximum price" type="number" min="0" placeholder="Max" value={maxPrice} onChange={(event) => updateFilter(setMaxPrice, event.target.value)} /></label>
             <label className="select-filter"><SlidersHorizontal size={15} /><select aria-label="Availability" value={stock} onChange={(event) => { const value = event.target.value; if (value === 'all' || value === 'in' || value === 'out') setStock(value) }}><option value="all">Availability</option><option value="in">In stock</option><option value="out">Sold out</option></select></label>
+            <label className="select-filter"><select aria-label="Search type" value={searchMode} onChange={(event) => { const value = event.target.value; if (value === 'hybrid' || value === 'semantic') setSearchMode(value) }}><option value="hybrid">Keyword search</option><option value="semantic">AI semantic search</option></select></label>
             <label className="select-filter sort-filter"><ArrowUpDown size={15} /><select aria-label="Sort products" value={sort} onChange={(event) => { const value = event.target.value; if (value === 'recommended' || value === 'price-low' || value === 'price-high' || value === 'name') setSort(value) }}><option value="recommended">Featured</option><option value="price-low">Price: low to high</option><option value="price-high">Price: high to low</option><option value="name">Name: A to Z</option></select></label>
           </div>
         </div>

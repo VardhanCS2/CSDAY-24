@@ -354,6 +354,8 @@ def test_ai_chat_endpoint_is_public_and_reports_missing_provider_configuration(m
 
 
 def test_ai_chat_endpoint_streams_sources_and_incremental_tokens(monkeypatch):
+    monkeypatch.setattr(ai_chat, "get_cached_value", lambda _key: None)
+    monkeypatch.setattr(ai_chat, "set_cached_value", lambda _key, _value: None)
     monkeypatch.setattr(
         ai_chat,
         "configured_providers",

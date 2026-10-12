@@ -32,7 +32,7 @@ _CATEGORY_ALIASES = {
     "mobile": {"mobile", "mobiles", "phone", "phones", "smartphone", "smartphones", "iphone", "android"},
     "laptop": {"laptop", "laptops", "notebook", "notebooks", "macbook"},
     "tablet": {"tablet", "tablets", "ipad"},
-    "headphones": {"headphone", "headphones", "headset", "headsets", "earphone", "earphones", "earbud", "earbuds", "earpiece", "earpieces" ,"wireless earphones", "wireless earbuds"},
+    "headphones": {"headphone", "headphones", "headset", "headsets", "earphone", "earphones", "earbud", "earbuds", "earpiece", "earpieces" ,"wireless earphones", "wireless earbuds" , "airpods", "bluetooth earphones", "bluetooth earbuds"},
     "watch": {"watch", "watches", "smartwatch", "smartwatches"},
     "bottle": {"bottle", "bottles", "flask", "flasks"},
     "bag": {"bag", "bags", "handbag", "handbags", "backpack", "backpacks"},

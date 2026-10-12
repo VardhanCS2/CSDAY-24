@@ -12,7 +12,6 @@ email-validator
 redis
 celery
 python-multipart
-chromium
 slowapi>=0.1.9,<1.0
 locust>=2.32,<3.0
 pillow

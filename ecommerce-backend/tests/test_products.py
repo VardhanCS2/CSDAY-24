@@ -1,3 +1,14 @@
+from types import SimpleNamespace
+
+import pytest
+
+from app.api.deps import get_current_admin
+from app.api.v1 import products as products_api
+from app.database.database import get_db
+from app.main import app
+from app.services.product_service import ProductHasOrderHistoryError
+
+
 def test_get_products(client):
 
     response = client.get(
@@ -62,6 +73,53 @@ def test_delete_product(client, auth_headers):
 
     assert response.status_code == 200
     assert response.json()["success"] is True
+
+
+def test_delete_product_with_order_history_returns_conflict(client, monkeypatch):
+    app.dependency_overrides[get_current_admin] = lambda: SimpleNamespace(id=1)
+    app.dependency_overrides[get_db] = lambda: None
+
+    def reject_delete(_db, _product_id):
+        raise ProductHasOrderHistoryError(
+            "This product is part of an existing order and cannot be deleted. "
+            "Set its stock to 0 to stop new sales while preserving order history."
+        )
+
+    monkeypatch.setattr(products_api, "remove_product", reject_delete)
+    try:
+        response = client.delete("/products/284")
+    finally:
+        app.dependency_overrides.pop(get_current_admin, None)
+        app.dependency_overrides.pop(get_db, None)
+
+    assert response.status_code == 409
+    assert "existing order" in response.json()["detail"]
+    assert "stock to 0" in response.json()["detail"]
+
+
+def test_remove_product_rejects_product_referenced_by_order(monkeypatch):
+    from app.services import product_service
+
+    product = SimpleNamespace(id=284)
+
+    class OrderItemQuery:
+        def filter(self, _condition):
+            return self
+
+        def first(self):
+            return SimpleNamespace(id=1)
+
+    class ProductDB:
+        def query(self, model):
+            from app.models.order_item import OrderItem
+
+            assert model is OrderItem.id
+            return OrderItemQuery()
+
+    monkeypatch.setattr(product_service, "get_product_by_id", lambda _db, _id: product)
+
+    with pytest.raises(ProductHasOrderHistoryError, match="existing order"):
+        product_service.remove_product(ProductDB(), 284)
 
 
 def test_product_image_url_validation_and_upload(client, auth_headers, monkeypatch):

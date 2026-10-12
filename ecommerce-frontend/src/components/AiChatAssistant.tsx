@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type Dispatch, type FormEvent, type SetStateAction } from 'react'
-import { Bot, LoaderCircle, RotateCcw, Send, Sparkles, X } from 'lucide-react'
+import { Bot, LoaderCircle, RotateCcw, Send, Sparkles, Wrench, X } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Link } from 'react-router-dom'
@@ -31,6 +31,12 @@ interface StreamEvent {
   message?: string
 }
 
+interface AgentResponse {
+  reply: string
+  sources: ProductSource[]
+  label: string
+}
+
 const welcomeMessage: AssistantMessage = {
   id: 'welcome',
   role: 'assistant',
@@ -58,6 +64,7 @@ export function AiChatAssistant() {
   const [open, setOpen] = useState(false)
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
+  const [agentMode, setAgentMode] = useState(false)
   const [messages, setMessages] = useState<AssistantMessage[]>([welcomeMessage])
   const messageListRef = useRef<HTMLDivElement>(null)
   const controllerRef = useRef<AbortController | null>(null)
@@ -94,9 +101,25 @@ export function AiChatAssistant() {
     const controller = new AbortController()
     controllerRef.current = controller
     try {
+      if (agentMode) {
+        const response = await api.post<AgentResponse>('/ai/agent', { message: question })
+        if (!response.data.reply.trim()) throw new Error('The product-search agent returned an empty response.')
+        updateAssistantMessage(setMessages, assistantId, (message) => ({
+          ...message,
+          content: response.data.reply,
+          sources: response.data.sources,
+          sourceLabel: response.data.label,
+        }))
+        return
+      }
+      const accessToken = localStorage.getItem('access_token')
       const response = await fetch(streamUrl(), {
         method: 'POST',
-        headers: { Accept: 'text/event-stream', 'Content-Type': 'application/json' },
+        headers: {
+          Accept: 'text/event-stream',
+          'Content-Type': 'application/json',
+          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+        },
         credentials: 'omit',
         signal: controller.signal,
         body: JSON.stringify({ message: question, history: conversationHistory }),
@@ -196,6 +219,9 @@ export function AiChatAssistant() {
             <button className="ai-chat-icon-button" type="button" aria-label="Start a new AI chat" onClick={clearConversation} disabled={sending}>
               <RotateCcw size={16} />
             </button>
+            <button className="ai-chat-icon-button" type="button" aria-label={agentMode ? 'Disable product-search agent' : 'Enable product-search agent'} aria-pressed={agentMode} title="Let the AI call the catalogue search tool" onClick={() => setAgentMode((enabled) => !enabled)} disabled={sending}>
+              <Wrench size={16} />
+            </button>
             <button className="ai-chat-icon-button" type="button" aria-label="Close AI shopping assistant" onClick={() => setOpen(false)}>
               <X size={19} />
             </button>
@@ -258,7 +284,7 @@ export function AiChatAssistant() {
               {sending ? <LoaderCircle size={17} className="ai-chat-spinner" /> : <Send size={17} />}
             </button>
           </form>
-          <div className="ai-chat-footnote">AI can make mistakes. Check product details before ordering.</div>
+          <div className="ai-chat-footnote">{agentMode ? 'Product-search agent mode · The assistant can call the catalogue search tool.' : 'AI can make mistakes. Check product details before ordering.'}</div>
         </section>
       )}
 
