@@ -1,8 +1,7 @@
-from datetime import datetime
-
 from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text
 
 from app.database.base import Base
+from app.core.time import utcnow_naive
 
 
 class ChatMessage(Base):
@@ -12,4 +11,4 @@ class ChatMessage(Base):
     sender_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     recipient_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     text = Column(Text, nullable=False)
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
+    created_at = Column(DateTime, nullable=False, default=utcnow_naive, index=True)

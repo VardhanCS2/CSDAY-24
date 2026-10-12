@@ -1,5 +1,3 @@
-from datetime import datetime
-
 from sqlalchemy import (
     Column,
     Integer,
@@ -10,6 +8,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import relationship
 
 from app.database.base import Base
+from app.core.time import utcnow_naive
 
 
 
@@ -54,14 +53,14 @@ class User(Base):
 
     created_at = Column(
         DateTime,
-        default=datetime.utcnow
+        default=utcnow_naive
     )
 
 
     updated_at = Column(
         DateTime,
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow
+        default=utcnow_naive,
+        onupdate=utcnow_naive
     )
 
 

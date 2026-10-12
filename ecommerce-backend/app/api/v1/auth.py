@@ -1,7 +1,9 @@
 from fastapi import (
     APIRouter,
     Depends,
-    HTTPException
+    HTTPException,
+    Request,
+    Response,
 )
 
 from sqlalchemy.orm import Session
@@ -32,6 +34,7 @@ from app.core.security import (
     create_refresh_token,
     decode_token,
 )
+from app.core.rate_limit import limiter
 
 
 from app.utils.response import success_response
@@ -46,7 +49,10 @@ router = APIRouter(
 
 
 @router.post("/register")
+@limiter.limit("5/minute")
 def register(
+    request: Request,
+    response: Response,
     user_data: UserCreate,
     db: Session = Depends(get_db)
 ):
@@ -70,7 +76,10 @@ def register(
 
 
 @router.post("/login")
+@limiter.limit("5/minute")
 def login(
+    request: Request,
+    response: Response,
     user_data: UserLogin,
     db: Session = Depends(get_db)
 ):
@@ -146,7 +155,10 @@ def get_current_profile(
 
 
 @router.post("/refresh")
+@limiter.limit("10/minute")
 def refresh_tokens(
+    request: Request,
+    response: Response,
     token_data: TokenRefresh,
     db: Session = Depends(get_db),
 ):

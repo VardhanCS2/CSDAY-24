@@ -7,7 +7,16 @@ from fastapi.testclient import TestClient
 
 from app.database.database import SessionLocal
 from app.main import app
+from app.core.rate_limit import limiter
 from app.models.user import User
+
+
+@pytest.fixture(autouse=True)
+def disable_rate_limits_for_isolated_tests():
+    enabled = limiter.enabled
+    limiter.enabled = False
+    yield
+    limiter.enabled = enabled
 
 
 @pytest.fixture

@@ -73,10 +73,10 @@ export function AdminProductEditor({ product, saving, onCancel, onSave }: AdminP
 
   const preview = imageMode === 'url'
     ? imageUrl
-      ? <img className="admin-image-preview" src={imageUrl} alt="Product image preview" onLoad={() => setPreviewStatus('ready')} onError={() => setPreviewStatus('failed')} />
+      ? <img className="admin-image-preview" src={imageUrl} alt="Product image preview" loading="lazy" decoding="async" onLoad={() => setPreviewStatus('ready')} onError={() => setPreviewStatus('failed')} />
       : null
     : image
-      ? <img className="admin-image-preview" ref={uploadPreviewRef} alt="Selected product image preview" onLoad={() => setPreviewStatus('ready')} onError={() => setPreviewStatus('failed')} />
+      ? <img className="admin-image-preview" ref={uploadPreviewRef} alt="Selected product image preview" loading="lazy" decoding="async" onLoad={() => setPreviewStatus('ready')} onError={() => setPreviewStatus('failed')} />
       : product?.image_url
         ? <ProductImage product={product} className="admin-image-preview" />
         : null

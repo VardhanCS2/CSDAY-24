@@ -5,6 +5,7 @@ import { Toaster } from 'sonner'
 import { useAuth } from '@/hooks/useAuth'
 import { useCartStore } from '@/stores/cart-store'
 import { RealtimePanel } from '@/components/RealtimePanel'
+import { AiChatAssistant } from '@/components/AiChatAssistant'
 
 const apiDocsUrl = import.meta.env.VITE_API_DOCS_URL || (
   import.meta.env.VITE_API_BASE_URL?.startsWith('http')
@@ -61,6 +62,7 @@ export function StoreLayout() {
         </div>
       </header>
       <Outlet />
+      <AiChatAssistant />
       <footer className="site-footer"><Link to="/" className="footer-brand">common goods</Link><span>Everyday essentials, made more considered.</span><a href={apiDocsUrl} target="_blank" rel="noreferrer">API docs <ArrowUpRight size={13} /></a></footer>
     </div>
   )

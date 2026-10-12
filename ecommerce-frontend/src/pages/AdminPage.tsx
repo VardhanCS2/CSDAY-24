@@ -48,7 +48,7 @@ export function AdminPage() {
   const ordersQuery = useOrders({ admin: true })
   const productsQuery = useQuery({
     queryKey: ['admin', 'products'],
-    queryFn: async () => responseData<Paginated<Product>>(await api.get('/products/', { params: { page: 1, limit: 200 } })),
+    queryFn: async () => responseData<Paginated<Product>>(await api.get('/products/', { params: { page: 1, limit: 100 } })),
   })
   const orders = ordersQuery.data || []
   const products = productsQuery.data?.items || []

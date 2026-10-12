@@ -2,6 +2,7 @@ from fastapi import (
     APIRouter,
     Depends,
     HTTPException,
+    Query,
     UploadFile,
     File,
     Form
@@ -55,15 +56,15 @@ router = APIRouter(
 @router.get("/")
 def get_products(
 
-    page: int = 1,
+    page: int = Query(default=1, ge=1),
 
-    limit: int = 10,
+    limit: int = Query(default=10, ge=1, le=100),
 
-    search: str | None = None,
+    search: str | None = Query(default=None, max_length=200),
 
-    min_price: float | None = None,
+    min_price: float | None = Query(default=None, ge=0),
 
-    max_price: float | None = None,
+    max_price: float | None = Query(default=None, ge=0),
 
     stock_available: bool | None = None,
     search_mode: Literal["hybrid", "full_text", "fuzzy"] = "hybrid",

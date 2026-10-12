@@ -16,6 +16,7 @@ The app uses Zustand for client-owned session and cart state. TanStack Query own
 - Cart changes, checkout, order status transitions, product edits, and product removal optimistically update cached data. Failed requests restore the previous cache value.
 - Query, debounce, and observer behavior live in custom hooks. Product cards are memoized; sorting and filter params use `useMemo`, and the add handler uses `useCallback`.
 - Route pages are dynamically imported with `React.lazy` and `Suspense`.
+- Product and admin-preview images use native lazy loading and asynchronous decoding. The storefront hero and product-detail lead image remain eager so lazy loading does not delay above-the-fold/Largest Contentful Paint content.
 - API requests use the same-origin `/api` proxy. Do not put tokens, credentials, or private API keys in frontend source; browser-visible `VITE_*` values are public.
 
 ## Run
@@ -88,3 +89,7 @@ npx lighthouse http://localhost:4173/ --only-categories=performance --output=htm
 ```
 
 Route pages build as separate chunks. Lighthouse scores depend on browser/device emulation, network, API availability, and image-host response; 90+ is a measured target, not a guaranteed score. Do not use the Vite development server (`npm run dev`) for the score target because its unbundled modules and HMR skew performance results.
+
+## AI shopping assistant
+
+A floating **Ask AI** button appears at the bottom-right of the storefront for guests and signed-in shoppers. It opens a catalogue assistant with streamed responses and links to cited products. This is intentionally separate from **Live support** in the header, which remains the authenticated, human-operated WebSocket chat. The browser sends questions to the backend's `POST /ai/chat/stream` SSE endpoint; configure provider keys only in the backend `.env`, never in frontend `VITE_*` settings. Provider setup, fallback order, rate limit, and vector-index behavior are documented in `../ecommerce-backend/README.md`.

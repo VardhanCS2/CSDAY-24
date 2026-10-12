@@ -37,8 +37,8 @@ router = APIRouter(
 
 @router.post("/add")
 def add_cart(
-    product_identifier: str,
-    quantity: int = Query(gt=0),
+    product_identifier: str = Query(min_length=1, max_length=100),
+    quantity: int = Query(gt=0, le=100),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -145,7 +145,7 @@ def remove_cart_item(
 @router.put("/edit")
 def edit_cart_item(
     product_id: int,
-    quantity: int = Query(ge=0),
+    quantity: int = Query(ge=0, le=100),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):

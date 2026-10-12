@@ -1,8 +1,7 @@
-from datetime import datetime
-
 from sqlalchemy import Column, DateTime, ForeignKey, Integer, JSON, String, Text
 
 from app.database.base import Base
+from app.core.time import utcnow_naive
 
 
 class BackgroundJob(Base):
@@ -16,5 +15,5 @@ class BackgroundJob(Base):
     progress = Column(Integer, nullable=False, default=0)
     result = Column(JSON, nullable=True)
     error = Column(Text, nullable=True)
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=utcnow_naive)
+    updated_at = Column(DateTime, nullable=False, default=utcnow_naive, onupdate=utcnow_naive)

@@ -1,6 +1,3 @@
-from datetime import datetime
-
-
 from sqlalchemy import (
     Column,
     Integer,
@@ -16,6 +13,7 @@ from sqlalchemy.orm import relationship
 
 
 from app.database.base import Base
+from app.core.time import utcnow_naive
 
 
 
@@ -80,7 +78,7 @@ class Product(Base):
 
     created_at = Column(
         DateTime,
-        default=datetime.utcnow
+        default=utcnow_naive
     )
 
 

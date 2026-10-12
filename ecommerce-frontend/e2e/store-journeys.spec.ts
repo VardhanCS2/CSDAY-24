@@ -636,6 +636,22 @@ test('keeps live notifications and support chat in separate panels', async ({ pa
 test.describe('authenticated admin journeys', () => {
 test.use({ storageState: 'playwright/.auth/admin.json' })
 
+test('loads catalog items in the admin dashboard within the API page-size limit', async ({ page }) => {
+  let requestedCatalogLimit: string | null = null
+  page.on('request', (request) => {
+    const url = new URL(request.url())
+    if (url.pathname === '/api/products/') {
+      requestedCatalogLimit = url.searchParams.get('limit')
+    }
+  })
+  await mockStoreApi(page)
+  await page.goto('/admin')
+  await page.getByRole('tab', { name: /Products/ }).click()
+
+  await expect(page.getByRole('heading', { name: 'Linen market tote' })).toBeVisible()
+  expect(requestedCatalogLimit).toBe('100')
+})
+
 test('moves orders through each fulfillment status in its matching group', async ({ page }) => {
   await mockStoreApi(page, { orders: [order(81)] })
   await page.goto('/admin')

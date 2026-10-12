@@ -1,7 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_admin, get_current_user
+from app.core.rate_limit import limiter
 from app.database.database import get_db
 from app.models.user import User
 from app.schemas.order import OrderCreate, OrderStatusUpdate
@@ -20,7 +21,10 @@ router = APIRouter(prefix="/orders", tags=["Orders"])
 
 
 @router.post("/")
+@limiter.limit("20/minute")
 async def create_order(
+    request: Request,
+    response: Response,
     order_data: OrderCreate | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),

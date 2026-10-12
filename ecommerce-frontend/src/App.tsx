@@ -4,11 +4,11 @@ import { AuthProvider } from '@/context/AuthContext'
 import { ProtectedRoute } from '@/components/ProtectedRoute'
 import { StoreLayout } from '@/components/StoreLayout'
 import { StorefrontPage } from '@/pages/StorefrontPage'
-import { BackgroundJobsPage } from '@/pages/BackgroundJobsPage'
 import './App.css'
 
 const AuthPage = lazy(() => import('@/pages/AuthPage').then((module) => ({ default: module.AuthPage })))
 const AdminPage = lazy(() => import('@/pages/AdminPage').then((module) => ({ default: module.AdminPage })))
+const BackgroundJobsPage = lazy(() => import('@/pages/BackgroundJobsPage').then((module) => ({ default: module.BackgroundJobsPage })))
 const CartPage = lazy(() => import('@/pages/CartPage').then((module) => ({ default: module.CartPage })))
 const CheckoutPage = lazy(() => import('@/pages/CheckoutPage').then((module) => ({ default: module.CheckoutPage })))
 const OrdersPage = lazy(() => import('@/pages/OrdersPage').then((module) => ({ default: module.OrdersPage })))
