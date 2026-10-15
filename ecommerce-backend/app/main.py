@@ -49,9 +49,11 @@ app.add_middleware(GZipMiddleware, minimum_size=500)
 app.add_middleware(SlowAPIMiddleware)
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.allowed_hosts)
 
+uploads_directory = Path(__file__).resolve().parent / "uploads"
+uploads_directory.mkdir(parents=True, exist_ok=True)
 app.mount(
     "/uploads",
-    StaticFiles(directory=Path(__file__).resolve().parent / "uploads"),
+    StaticFiles(directory=uploads_directory),
     name="uploads",
 )
 
