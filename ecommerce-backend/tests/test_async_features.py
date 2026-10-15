@@ -1,4 +1,5 @@
 from app.celery import tasks
+from app.api.v1 import ai_chat as ai_chat_api
 from app.api.v1 import jobs as jobs_api
 from app.database.database import SessionLocal
 from app.models.background_job import BackgroundJob
@@ -8,6 +9,57 @@ from app.models.order_item import OrderItem
 from app.models.product import Product
 from app.redis.cache import clear_cart
 from app.utils.invoice import create_invoice_pdf
+
+
+def test_ai_product_content_generation_runs_as_an_account_scoped_job(
+    client,
+    auth_headers,
+    customer_headers,
+    monkeypatch,
+):
+    from app.services import ai_features_service
+
+    admin = client.get("/auth/me", headers=auth_headers).json()["data"]
+    generated = {
+        "description": "A grounded product draft.",
+        "features": "- 8GB RAM",
+        "generation_mode": "ai",
+    }
+    monkeypatch.setattr(ai_chat_api, "require_celery_worker", lambda: None)
+    monkeypatch.setattr(ai_features_service, "generate_product_content", lambda *_args, **_kwargs: generated)
+    monkeypatch.setattr(
+        tasks.generate_product_content_task,
+        "apply_async",
+        lambda args, task_id: tasks.generate_product_content_task.apply(args=args, task_id=task_id),
+    )
+
+    response = client.post(
+        "/ai/products/generate-content/jobs",
+        headers=auth_headers,
+        json={
+            "name": "Example phone",
+            "price": 100,
+            "stock": 2,
+            "brand": "Example",
+            "category": "Electronics",
+            "features": "8GB RAM",
+            "existing_description": None,
+        },
+    )
+    assert response.status_code == 200
+    job_id = response.json()["data"]["id"]
+    job_response = client.get(f"/jobs/{job_id}", headers=auth_headers)
+    assert job_response.status_code == 200
+    assert job_response.json()["data"]["status"] == "completed"
+    assert job_response.json()["data"]["result"] == generated
+    assert client.get(f"/jobs/{job_id}", headers=customer_headers).status_code == 404
+
+    db = SessionLocal()
+    try:
+        db.query(BackgroundJob).filter(BackgroundJob.id == job_id).delete()
+        db.commit()
+    finally:
+        db.close()
 
 
 def test_invoice_job_runs_and_download_is_authenticated(client, auth_headers, customer_headers, monkeypatch):
@@ -284,6 +336,18 @@ def test_chat_history_is_persisted_and_customer_scoped(client, auth_headers, cus
 
         admin_history = client.get("/chats/", headers=auth_headers)
         assert any(item["id"] == message_id for item in admin_history.json()["data"])
+        conversations = client.get("/chats/conversations", headers=auth_headers)
+        assert conversations.status_code == 200
+        conversation = next(
+            item for item in conversations.json()["data"]
+            if item["customer_id"] == customer["id"]
+        )
+        assert conversation["customer_name"] == customer["name"]
+        assert conversation["last_message"] == "Saved support question"
+        assert conversation["last_sender_id"] == customer["id"]
+
+        forbidden_inbox = client.get("/chats/conversations", headers=customer_headers)
+        assert forbidden_inbox.status_code == 403
         forbidden = client.get(f"/chats/?customer_id={admin['id']}", headers=customer_headers)
         assert forbidden.status_code == 403
     finally:

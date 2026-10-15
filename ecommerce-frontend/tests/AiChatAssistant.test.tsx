@@ -1,14 +1,16 @@
-import { render, screen } from '@testing-library/react'
+import { act, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 import { AiChatAssistant } from '@/components/AiChatAssistant'
 import { api } from '@/api/client'
+import { useAuthStore } from '@/stores/auth-store'
 
 afterEach(() => {
   vi.unstubAllGlobals()
   vi.restoreAllMocks()
   localStorage.clear()
+  useAuthStore.setState({ token: null, user: null, loading: false })
 })
 
 describe('AI shopping assistant', () => {
@@ -53,6 +55,7 @@ describe('AI shopping assistant', () => {
     expect(await screen.findByText('This bottle is in stock [Product ID: 12].')).toBeInTheDocument()
     expect(screen.getByText('Same-category options over budget')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /Reusable glass bottle/ })).toHaveAttribute('href', '/product/12')
+    expect(screen.getByRole('img', { name: 'Reusable glass bottle' })).toBeInTheDocument()
     expect(fetchMock).toHaveBeenCalledWith(
       '/api/ai/chat/stream',
       expect.objectContaining({
@@ -61,6 +64,88 @@ describe('AI shopping assistant', () => {
         headers: expect.objectContaining({ Authorization: 'Bearer test-access-token' }),
       }),
     )
+  })
+
+  it('preserves source product IDs in history for similar-product follow-ups', async () => {
+    const user = userEvent.setup()
+    const makeStream = (text: string, productId: number) => ({
+      ok: true,
+      body: new ReadableStream({
+        start(controller) {
+          const events = [
+            `data: ${JSON.stringify({ type: 'sources', sources: [{ product_id: productId, name: 'Work Laptop', price: 900, stock: 2 }] })}\n\n`,
+            `data: ${JSON.stringify({ type: 'token', text })}\n\n`,
+            'data: {"type":"done"}\n\n',
+          ]
+          for (const event of events) controller.enqueue(new TextEncoder().encode(event))
+          controller.close()
+        },
+      }),
+    })
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(makeStream('A verified laptop [Product ID: 7].', 7))
+      .mockResolvedValueOnce(makeStream('Here are similar options.', 8))
+    vi.stubGlobal('fetch', fetchMock)
+    render(<MemoryRouter><AiChatAssistant /></MemoryRouter>)
+    await user.click(screen.getByRole('button', { name: 'Open AI shopping assistant' }))
+    const input = screen.getByRole('textbox', { name: 'Ask about products' })
+    await user.type(input, 'Tell me about a laptop')
+    await user.click(screen.getByRole('button', { name: 'Send message to AI assistant' }))
+    expect(await screen.findByText('A verified laptop [Product ID: 7].')).toBeInTheDocument()
+
+    await user.type(input, 'Show similar products')
+    await user.click(screen.getByRole('button', { name: 'Send message to AI assistant' }))
+    expect(await screen.findByText('Here are similar options.')).toBeInTheDocument()
+
+    const secondRequest = JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body)) as {
+      history: Array<{ role: string; content: string }>
+    }
+    expect(secondRequest.history.some((turn) => turn.content.includes('[Product ID: 7]'))).toBe(true)
+  })
+
+  it('clears the active conversation immediately when the authenticated account changes', async () => {
+    const user = userEvent.setup()
+    const events = [
+      `data: ${JSON.stringify({ type: 'sources', sources: [] })}\n\n`,
+      `data: ${JSON.stringify({ type: 'token', text: 'Private conversation from account one.' })}\n\n`,
+      'data: {"type":"done"}\n\n',
+    ]
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      body: new ReadableStream({
+        start(controller) {
+          for (const event of events) controller.enqueue(new TextEncoder().encode(event))
+          controller.close()
+        },
+      }),
+    }))
+    useAuthStore.setState({
+      token: 'account-one-token',
+      user: { id: 1, name: 'Customer One', email: 'one@example.test', role: 'customer' },
+      loading: false,
+    })
+    render(<MemoryRouter><AiChatAssistant /></MemoryRouter>)
+    await user.click(screen.getByRole('button', { name: 'Open AI shopping assistant' }))
+    await user.type(screen.getByRole('textbox', { name: 'Ask about products' }), 'Private question')
+    await user.click(screen.getByRole('button', { name: 'Send message to AI assistant' }))
+    expect(await screen.findByText('Private conversation from account one.')).toBeInTheDocument()
+
+    act(() => {
+      useAuthStore.setState({ token: null, user: null, loading: false })
+    })
+    expect(screen.queryByText('Private conversation from account one.')).not.toBeInTheDocument()
+
+    act(() => {
+      useAuthStore.setState({
+        token: 'account-two-token',
+        user: { id: 2, name: 'Admin Two', email: 'two@example.test', role: 'admin' },
+        loading: false,
+      })
+    })
+
+    expect(screen.queryByText('Private conversation from account one.')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Open AI shopping assistant' }))
+    expect(screen.getByText('Hi! I can help you find and compare products in our catalogue.')).toBeInTheDocument()
   })
 
   it('formats streamed Markdown including lists and tables without rendering raw HTML', async () => {
@@ -122,6 +207,10 @@ describe('AI shopping assistant', () => {
 
     expect(await screen.findByText('A bottle is available [Product ID: 8].')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /Water bottle/ })).toHaveAttribute('href', '/product/8')
-    expect(api.post).toHaveBeenCalledWith('/ai/agent', { message: 'Find a bottle' })
+    expect(api.post).toHaveBeenCalledWith(
+      '/ai/agent',
+      { message: 'Find a bottle' },
+      { signal: expect.any(AbortSignal) },
+    )
   })
 })

@@ -1,0 +1,17 @@
+.git
+.gitignore
+.env
+.env.*
+node_modules
+dist
+test-results
+tests
+e2e
+playwright
+playwright.config.ts
+.env
+.env.*
+!.env.example
+.oxlintrc.json
+tsconfig.tsbuildinfo
+README.md

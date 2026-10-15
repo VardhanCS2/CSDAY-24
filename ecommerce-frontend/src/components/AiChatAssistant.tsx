@@ -5,6 +5,8 @@ import remarkGfm from 'remark-gfm'
 import { Link } from 'react-router-dom'
 import { api } from '@/api/client'
 import { formatPrice } from '@/lib/utils'
+import { ProductImage } from '@/components/ProductImage'
+import { useAuthStore } from '@/stores/auth-store'
 import './AiChatAssistant.css'
 
 interface ProductSource {
@@ -12,6 +14,7 @@ interface ProductSource {
   name: string
   price: number
   stock: number
+  image_url?: string | null
 }
 
 interface AssistantMessage {
@@ -61,6 +64,15 @@ function updateAssistantMessage(
 }
 
 export function AiChatAssistant() {
+  const user = useAuthStore((state) => state.user)
+  const canUseChatbot = user === null || user.role === 'customer' || user.role === 'admin'
+  if (!canUseChatbot) return null
+  return <AiChatConversation key={user?.id ?? 'guest'} />
+}
+
+function AiChatConversation() {
+  const accountId = useAuthStore((state) => state.user?.id ?? null)
+  const accountIdRef = useRef<number | null>(accountId)
   const [open, setOpen] = useState(false)
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
@@ -86,10 +98,14 @@ export function AiChatAssistant() {
       .slice(-12)
       .map((message) => ({
         role: message.role,
-        content: message.content.slice(0, 3000),
+        content: [
+          message.content,
+          ...(message.sources ?? []).map((source) => `[Product ID: ${source.product_id}]`),
+        ].join('\n').slice(0, 3000),
       }))
     const nextId = ++messageIdRef.current
     const assistantId = `assistant-${nextId}`
+    const requestAccountId = accountId
     setMessages((current) => [
       ...current,
       { id: `user-${nextId}`, role: 'user', content: question },
@@ -102,7 +118,12 @@ export function AiChatAssistant() {
     controllerRef.current = controller
     try {
       if (agentMode) {
-        const response = await api.post<AgentResponse>('/ai/agent', { message: question })
+        const response = await api.post<AgentResponse>(
+          '/ai/agent',
+          { message: question },
+          { signal: controller.signal },
+        )
+        if (accountIdRef.current !== requestAccountId) return
         if (!response.data.reply.trim()) throw new Error('The product-search agent returned an empty response.')
         updateAssistantMessage(setMessages, assistantId, (message) => ({
           ...message,
@@ -139,6 +160,7 @@ export function AiChatAssistant() {
       let receivedAnswer = false
 
       function handleEvent(block: string) {
+        if (accountIdRef.current !== requestAccountId) return
         const data = block
           .split(/\r?\n/)
           .filter((line) => line.startsWith('data:'))
@@ -183,6 +205,7 @@ export function AiChatAssistant() {
       if (!receivedAnswer) throw new Error('The AI assistant returned an empty response. Please try again.')
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') return
+      if (accountIdRef.current !== requestAccountId) return
       updateAssistantMessage(setMessages, assistantId, (message) => ({
         ...message,
         content: message.content
@@ -191,8 +214,10 @@ export function AiChatAssistant() {
         error: true,
       }))
     } finally {
-      controllerRef.current = null
-      setSending(false)
+      if (controllerRef.current === controller && accountIdRef.current === requestAccountId) {
+        controllerRef.current = null
+        setSending(false)
+      }
     }
   }
 
@@ -242,6 +267,10 @@ export function AiChatAssistant() {
                       <span className="ai-sources-label">{message.sourceLabel || 'Relevant catalogue sources'}</span>
                       {message.sources.map((source) => (
                         <Link className="ai-chat-source" key={source.product_id} to={`/product/${source.product_id}`} onClick={() => setOpen(false)}>
+                          <ProductImage
+                            className="ai-chat-source-image"
+                            product={{ id: source.product_id, name: source.name, image_url: source.image_url ?? null }}
+                          />
                           <span><strong>{source.name}</strong><small>Product #{source.product_id} · {source.stock > 0 ? 'In stock' : 'Out of stock'}</small></span>
                           <span className="ai-source-price">{formatPrice(source.price)}</span>
                         </Link>

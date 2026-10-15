@@ -48,7 +48,18 @@ class Settings(BaseSettings):
     AI_MISTRAL_EMBEDDING_MODEL: str = "mistral-embed"
     AI_EMBEDDING_PROVIDER_ORDER: str = "mistral,gemini"
     AI_RESPONSE_CACHE_TTL_SECONDS: Annotated[int, Field(ge=60, le=86400)] = 3600
+    AI_PROVIDER_DAILY_QUOTAS: dict[str, Annotated[int, Field(ge=1)]] = Field(
+        default_factory=lambda: {"groq": 1000}
+    )
     AI_VECTOR_STORE_PATH: str = "private_files/chroma"
+    AI_PRODUCT_SEARCH_ALIASES: dict[str, str] = Field(
+        default_factory=lambda: {
+            "moto": "motorola",
+            "i phone": "iphone",
+            "apple phone": "apple iphone",
+            "vivi": "vivo",
+        }
+    )
     PRODUCT_SEARCH_SIMILARITY_THRESHOLD: Annotated[float, Field(ge=0.0, le=1.0)] = Field(
         default=0.35,
         validation_alias=AliasChoices(
@@ -67,6 +78,11 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_production_security(self) -> "Settings":
+        invalid_quota_providers = set(self.AI_PROVIDER_DAILY_QUOTAS) - {"groq", "gemini", "mistral"}
+        if invalid_quota_providers:
+            raise ValueError(
+                "AI_PROVIDER_DAILY_QUOTAS only accepts groq, gemini, and mistral provider names."
+            )
         if self.ENVIRONMENT.lower() == "production":
             if len(self.JWT_SECRET_KEY.encode("utf-8")) < 32:
                 raise ValueError("Production JWT_SECRET_KEY must contain at least 32 bytes.")

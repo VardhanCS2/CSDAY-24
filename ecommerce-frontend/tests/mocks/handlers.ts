@@ -5,6 +5,10 @@ const envelope = <T,>(data: T): ApiEnvelope<T> => ({ success: true, message: 'ok
 
 export const handlers = [
   http.get('/api/cart/', () => HttpResponse.json(envelope<CartItem[]>([]))),
+  http.get('/api/products/categories', () => HttpResponse.json(envelope([
+    { name: 'Electronics', icon: 'laptop' },
+    { name: 'Footwear', icon: 'footprints' },
+  ]))),
   http.get('/api/products/', () => HttpResponse.json(envelope<Paginated<Product>>({
     page: 1,
     limit: 12,

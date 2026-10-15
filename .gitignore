@@ -1,4 +1,3 @@
-@"
 __pycache__/
 *.py[cod]
 .venv/
@@ -20,4 +19,6 @@ test-results/
 .mypy_cache/
 .coverage
 htmlcov/
-"@ | Set-Content .gitignore
+*.sqlite
+ecommerce_backend_diagnostic.sqlite
+celerybeat-schedule*

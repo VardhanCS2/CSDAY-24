@@ -11,6 +11,7 @@ from fastapi import (
 )
 from urllib.parse import urlsplit
 from typing import Literal
+import json
 
 from sqlalchemy.orm import Session
 
@@ -38,6 +39,7 @@ from app.services.ai_features_service import (
     moderate_content,
     semantic_search_products,
 )
+from app.services.product_categories import canonicalize_product_categories, product_categories
 
 
 from app.api.deps import get_current_admin
@@ -77,9 +79,15 @@ def get_products(
 
     stock_available: bool | None = None,
     search_mode: Literal["hybrid", "full_text", "fuzzy"] = "hybrid",
+    category: str | None = Query(default=None, max_length=100),
     db: Session = Depends(get_db)
 
 ):
+    if category:
+        try:
+            category = canonicalize_product_categories([category])[0]
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
 
     products = get_all_products(
 
@@ -96,7 +104,9 @@ def get_products(
         max_price,
 
         stock_available,
-        search_mode
+
+        search_mode,
+        category
 
     )
 
@@ -107,6 +117,14 @@ def get_products(
 
         message="Products fetched successfully"
 
+    )
+
+
+@router.get("/categories")
+def get_product_categories():
+    return success_response(
+        data=product_categories(),
+        message="Product categories fetched successfully",
     )
 
 
@@ -121,10 +139,16 @@ def search_products_semantically(
     min_price: float | None = Query(default=None, ge=0),
     max_price: float | None = Query(default=None, ge=0),
     stock_available: bool | None = None,
+    category: str | None = Query(default=None, max_length=100),
     db: Session = Depends(get_db),
 ):
     if min_price is not None and max_price is not None and min_price > max_price:
         raise HTTPException(status_code=422, detail="Minimum price cannot exceed maximum price.")
+    if category:
+        try:
+            category = canonicalize_product_categories([category])[0]
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
     try:
         products = semantic_search_products(
             db,
@@ -132,6 +156,7 @@ def search_products_semantically(
             min_price=min_price,
             max_price=max_price,
             stock_available=stock_available,
+            category=category,
         )
     except AIServiceUnavailableError as error:
         raise HTTPException(status_code=503, detail=str(error)) from error
@@ -212,6 +237,18 @@ def create_product(
 
     description: str | None = Form(default=None, max_length=2000),
 
+    brand: str | None = Form(default=None, max_length=100),
+
+    category: str | None = Form(default=None, max_length=100),
+
+    categories: str = Form(default="[]"),
+
+    feature_details: str | None = Form(default=None, max_length=4000),
+
+    features: str | None = Form(default=None, max_length=4000),
+
+    specifications: str = Form(default="{}"),
+
     price: float = Form(...),
 
     stock: int = Form(...),
@@ -240,28 +277,37 @@ def create_product(
                 detail=f"Product description was rejected by content moderation ({moderation.category}).",
             )
 
-    image_path = None
+    try:
+        parsed_specifications = json.loads(specifications)
+        if not isinstance(parsed_specifications, dict):
+            raise ValueError("Specifications must be a JSON object.")
+        parsed_categories = json.loads(categories)
+        if not isinstance(parsed_categories, list) or not all(
+            isinstance(item, str) for item in parsed_categories
+        ):
+            raise ValueError("Categories must be a JSON array of category names.")
+        if not parsed_categories and category and category.strip():
+            parsed_categories = [category.strip()]
+        parsed_categories = canonicalize_product_categories(parsed_categories)
+        product_data = ProductCreate(
+            name=name,
+            description=description,
+            brand=brand,
+            category=parsed_categories[0] if parsed_categories else None,
+            categories=parsed_categories,
+            feature_details=feature_details,
+            features=features,
+            specifications=parsed_specifications,
+            price=price,
+            stock=stock,
+            image_url=validate_image_url(image_url) if image is None else None,
+        )
+    except (json.JSONDecodeError, ValueError) as error:
+        raise HTTPException(status_code=422, detail=f"Invalid product data: {error}") from error
 
-    if image:
-
-        image_path = save_image(image)
-
-
-
-    product_data = ProductCreate(
-
-        name=name,
-
-        description=description,
-
-        price=price,
-
-        stock=stock,
-
-        image_url=validate_image_url(image_url) if image_path is None else None
-
-    )
-
+    image_path = save_image(image) if image is not None else None
+    if image_path:
+        product_data.image_url = image_path
 
     product = create_new_product(
 
@@ -272,15 +318,6 @@ def create_product(
         current_user.id
 
     )
-
-
-
-    if image_path:
-        product.image_url = image_path
-
-        db.commit()
-
-        db.refresh(product)
 
 
 
@@ -342,6 +379,19 @@ def update_product(
 
     if "image_url" in product_data.model_fields_set:
         product_data.image_url = validate_image_url(product_data.image_url)
+
+    if "categories" in product_data.model_fields_set:
+        product_data.category = product_data.categories[0] if product_data.categories else None
+    elif "category" in product_data.model_fields_set:
+        try:
+            product_data.categories = (
+                canonicalize_product_categories([product_data.category])
+                if product_data.category
+                else []
+            )
+            product_data.category = product_data.categories[0] if product_data.categories else None
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
 
     product = update_existing_product(
 

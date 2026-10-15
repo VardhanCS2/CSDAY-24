@@ -15,6 +15,12 @@ export interface Product {
   id: number
   name: string
   description: string | null
+  brand?: string | null
+  category?: string | null
+  categories?: string[]
+  feature_details?: string | null
+  features?: string | null
+  specifications?: Record<string, string>
   price: number
   stock: number
   image_url: string | null
@@ -64,7 +70,7 @@ export interface Order {
 
 export interface BackgroundJob {
   id: string
-  task_type: 'invoice' | 'product_import' | string
+  task_type: 'invoice' | 'product_import' | 'ai_product_content' | string
   resource_id: number | null
   status: 'queued' | 'running' | 'completed' | 'failed' | string
   progress: number
@@ -82,6 +88,15 @@ export interface ChatMessage {
   recipient_name?: string
   text: string
   created_at: string
+}
+
+export interface ChatConversation {
+  customer_id: number
+  customer_name: string
+  customer_email: string
+  last_message: string
+  last_sender_id: number
+  last_message_at: string
 }
 
 export interface Paginated<T> {
@@ -103,4 +118,10 @@ export interface ProductFilters {
   min_price?: string
   max_price?: string
   stock_available?: boolean
+  category?: string
+}
+
+export interface ProductCategory {
+  name: string
+  icon: string
 }

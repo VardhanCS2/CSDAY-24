@@ -1,6 +1,6 @@
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
 import { api, responseData } from '@/api/client'
-import type { Paginated, Product, ProductFilters } from '@/types/models'
+import type { Paginated, Product, ProductCategory, ProductFilters } from '@/types/models'
 
 const PAGE_SIZE = 12
 
@@ -16,6 +16,7 @@ export function useProducts(filters: ProductFilters = {}) {
             min_price: filters.min_price,
             max_price: filters.max_price,
             stock_available: filters.stock_available,
+            category: filters.category,
             page: pageParam,
             limit: PAGE_SIZE,
           }
@@ -33,5 +34,13 @@ export function useProduct(productId: string | undefined) {
     queryKey: ['product', productId],
     queryFn: async () => responseData<Product>(await api.get(`/products/${productId}`)),
     enabled: Boolean(productId),
+  })
+}
+
+export function useProductCategories() {
+  return useQuery({
+    queryKey: ['product-categories'],
+    queryFn: async () => responseData<ProductCategory[]>(await api.get('/products/categories')),
+    staleTime: 5 * 60 * 1000,
   })
 }

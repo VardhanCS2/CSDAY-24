@@ -1,38 +1,56 @@
-name: CI
+name: CI Pipeline
 
 on:
   pull_request:
+    branches: [main, master]
   push:
     branches: [main, master]
 
 jobs:
   frontend:
+    name: Frontend Lint, Test & Build
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: ecommerce-frontend
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: ecommerce-frontend/package-lock.json
-      - run: npm ci
-      - run: npm run lint
-      - run: npm run build
-      - run: npm test
-      - run: npx playwright install --with-deps chromium
-      - run: npm run test:e2e
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run linter (oxlint)
+        run: npm run lint
+
+      - name: Verify production build
+        run: npm run build
+
+      - name: Run unit tests (Vitest)
+        run: npm test
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Run end-to-end tests
+        run: npm run test:e2e
 
   backend:
+    name: Backend Test & Migrations
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:16
+        image: postgres:16-alpine
         env:
           POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
+          POSTGRES_HOST_AUTH_METHOD: trust
           POSTGRES_DB: ecommerce_test
         ports:
           - 5432:5432
@@ -42,7 +60,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
       redis:
-        image: redis:7
+        image: redis:7-alpine
         ports:
           - 6379:6379
         options: >-
@@ -54,7 +72,7 @@ jobs:
       run:
         working-directory: ecommerce-backend
     env:
-      DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/ecommerce_test
+      DATABASE_URL: postgresql+psycopg2://postgres@localhost:5432/ecommerce_test
       JWT_ALGORITHM: HS256
       ACCESS_TOKEN_EXPIRE_MINUTES: 15
       REFRESH_TOKEN_EXPIRE_HOURS: 24
@@ -63,17 +81,60 @@ jobs:
       CELERY_RESULT_BACKEND: redis://localhost:6379/2
       SMTP_HOST: localhost
       SMTP_PORT: 1025
-      SMTP_USERNAME: ci
-      SMTP_PASSWORD: ci
+      SMTP_USERNAME: ""
+      SMTP_PASSWORD: ""
+      ENVIRONMENT: testing
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Generate ephemeral JWT signing key
+        run: echo "JWT_SECRET_KEY=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
           python-version: '3.12'
           cache: pip
           cache-dependency-path: ecommerce-backend/requirements.txt
-      - name: Generate an ephemeral test signing key
-        run: echo "JWT_SECRET_KEY=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
-      - run: python -m pip install -r requirements.txt
-      - run: alembic upgrade head
-      - run: pytest -q
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run database migrations
+        run: alembic upgrade head
+
+      - name: Run pytest test suite
+        run: pytest -q
+
+  docker-build:
+    name: Validate Docker Images
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Test build backend Dockerfile
+        uses: docker/build-push-action@v6
+        with:
+          context: ./ecommerce-backend
+          file: ./ecommerce-backend/Dockerfile
+          push: false
+          tags: ecommerce-backend:test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Test build frontend Dockerfile
+        uses: docker/build-push-action@v6
+        with:
+          context: ./ecommerce-frontend
+          file: ./ecommerce-frontend/Dockerfile
+          push: false
+          tags: ecommerce-frontend:test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

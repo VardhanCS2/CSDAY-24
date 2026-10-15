@@ -37,6 +37,20 @@ describe('product query hook with mocked API', () => {
     await waitFor(() => expect(result.current.data?.pages[0]?.items[0]?.name).toBe('Stoneware cup'))
   })
 
+  it('passes selected categories to the catalogue endpoint', async () => {
+    server.use(http.get('/api/products/', ({ request }) => {
+      expect(new URL(request.url).searchParams.get('category')).toBe('Footwear')
+      return HttpResponse.json<ApiEnvelope<Paginated<Product>>>({
+        success: true,
+        message: 'ok',
+        data: { page: 1, limit: 12, total: 0, items: [] },
+      })
+    }))
+
+    const { result } = renderHook(() => useProducts({ category: 'Footwear' }), { wrapper: createWrapper() })
+    await waitFor(() => expect(result.current.data?.pages[0]?.total).toBe(0))
+  })
+
   it('uses next-page metadata to enable infinite scrolling', async () => {
     server.use(http.get('/api/products/', ({ request }) => {
       const page = Number(new URL(request.url).searchParams.get('page'))
@@ -61,6 +75,7 @@ describe('product query hook with mocked API', () => {
     server.use(http.get('/api/products/semantic-search', ({ request }) => {
       const url = new URL(request.url)
       expect(url.searchParams.get('q')).toBe('something for a warm drink')
+      expect(url.searchParams.get('category')).toBe('Electronics')
       expect(url.searchParams.get('page')).toBe('1')
       return HttpResponse.json<ApiEnvelope<Paginated<Product>>>({
         success: true,
@@ -70,7 +85,7 @@ describe('product query hook with mocked API', () => {
     }))
 
     const { result } = renderHook(
-      () => useProducts({ search: 'something for a warm drink', search_mode: 'semantic' }),
+      () => useProducts({ search: 'something for a warm drink', search_mode: 'semantic', category: 'Electronics' }),
       { wrapper: createWrapper() },
     )
 

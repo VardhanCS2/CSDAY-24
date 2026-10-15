@@ -247,6 +247,16 @@
 .section-heading, .account-page-heading { display: flex; align-items: end; justify-content: space-between; margin-bottom: 27px; }
 .section-heading h2 { margin: 12px 0 0; font-family: var(--font-display); font-size: clamp(25px, 3vw, 34px); font-weight: 600; letter-spacing: -.04em; }
 .result-total { color: var(--muted-foreground); font-size: 11px; }
+.category-strip { margin: -5px 0 19px; }
+.category-scroll { display: flex; gap: 10px; overflow-x: auto; padding: 5px 2px 13px; scrollbar-width: thin; scrollbar-color: var(--border) transparent; overscroll-behavior-inline: contain; }
+.category-scroll::-webkit-scrollbar { height: 6px; }
+.category-scroll::-webkit-scrollbar-track { background: transparent; }
+.category-scroll::-webkit-scrollbar-thumb { border-radius: 8px; background: var(--border); }
+.category-option { flex: 0 0 108px; display: flex; align-items: center; flex-direction: column; gap: 8px; min-height: 88px; border: 1px solid transparent; border-radius: 5px; padding: 9px 7px 8px; color: var(--muted-foreground); background: transparent; cursor: pointer; font: inherit; font-size: 10px; line-height: 1.25; text-align: center; transition: border-color .16s, color .16s, background .16s; }
+.category-option:hover, .category-option:focus-visible { border-color: var(--border); color: var(--foreground); outline: none; }
+.category-option.is-selected { border-color: var(--primary); color: var(--primary); background: color-mix(in srgb, var(--primary) 6%, transparent); }
+.category-icon { display: grid; width: 43px; height: 43px; place-items: center; border: 1px solid var(--border); border-radius: 50%; background: var(--card); }
+.category-option.is-selected .category-icon { border-color: color-mix(in srgb, var(--primary) 35%, var(--border)); background: var(--card); }
 .filter-bar { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-bottom: 27px; padding: 12px 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
 .search-box { position: relative; flex: 1; min-width: 160px; max-width: 420px; }
 .search-field { display: flex; align-items: center; gap: 10px; min-width: 160px; color: var(--muted-foreground); }
@@ -573,7 +583,27 @@ html[data-theme='dark'] .notice-error { color: #f0b6a7; border-color: #674239; b
 .admin-product-editor { display: grid; gap: 14px; }
 .admin-editor-fields { display: grid; grid-template-columns: minmax(0, 1fr) 100px 80px; gap: 10px; }
 .admin-editor-fields .form-field { min-width: 0; }
+.admin-category-picker { grid-column: 1 / -1; min-width: 0; margin: 0; border: 1px solid var(--border); border-radius: 4px; padding: 11px; }
+.admin-category-picker legend { padding: 0 5px; color: var(--foreground); font-size: 11px; }
+.admin-category-picker legend span { color: var(--muted-foreground); font-size: 10px; font-weight: 400; }
+.admin-category-options { display: flex; flex-wrap: wrap; gap: 7px; }
+.admin-category-option { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--border); border-radius: 4px; padding: 7px 9px; color: var(--muted-foreground); font-size: 10px; cursor: pointer; }
+.admin-category-option.is-selected { border-color: var(--primary); color: var(--primary); background: color-mix(in srgb, var(--primary) 6%, transparent); }
+.admin-category-option input { accent-color: var(--primary); }
+.form-hint { color: var(--muted-foreground); font-size: 10px; font-weight: 400; }
 .admin-editor-description { grid-column: 1 / -1; }
+.admin-textarea { min-height: 82px; resize: vertical; padding-block: 9px; }
+.admin-specification-rows { display: grid; gap: 7px; }
+.admin-specification-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr) auto; gap: 7px; }
+.admin-specification-row .ui-button { min-height: 34px; padding-inline: 9px; }
+.detail-product-taxonomy { color: var(--muted-foreground); font-size: 11px; }
+.detail-product-features, .detail-product-specifications { margin-top: 22px; }
+.detail-product-features h2, .detail-product-specifications h2 { margin: 0 0 10px; font-family: var(--font-display); font-size: 17px; }
+.detail-product-features ul { display: grid; gap: 6px; padding-left: 18px; color: var(--muted-foreground); font-size: 11px; }
+.detail-product-specifications dl { margin: 0; border-top: 1px solid var(--border); }
+.detail-product-specifications dl > div { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--border); font-size: 11px; }
+.detail-product-specifications dt { color: var(--muted-foreground); }
+.detail-product-specifications dd { margin: 0; }
 .admin-image-picker { min-width: 0; margin: 0; padding: 11px; border: 1px solid var(--border); }
 .admin-image-picker legend { padding: 0 5px; color: var(--muted-foreground); font-size: 10px; font-weight: 700; }
 .admin-image-options { display: flex; gap: 7px; margin-bottom: 11px; }
@@ -589,6 +619,9 @@ html[data-theme='dark'] .notice-error { color: #f0b6a7; border-color: #674239; b
 .admin-form-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 17px; }
 
 @media (max-width: 760px) {
+  .ai-provider-usage-list { grid-template-columns: 1fr; }
+  .ai-usage-panel { padding: 16px; }
+  .ai-usage-heading { flex-direction: column; }
   .admin-page { padding: 30px 17px 55px; }
   .admin-heading { align-items: flex-start; }
   .admin-role-mark { font-size: 0; padding: 8px; }
@@ -618,6 +651,27 @@ html[data-theme='dark'] .notice-error { color: #f0b6a7; border-color: #674239; b
 .order-actions { display: flex; flex-wrap: wrap; gap: 7px; }
 .background-job-list { display: grid; gap: 12px; }
 .background-job-card, .csv-import-panel { padding: 19px; border: 1px solid var(--border); background: var(--card); }
+.ai-usage-panel { margin: 0 0 28px; padding: 24px; border: 1px solid var(--border); background: linear-gradient(140deg, var(--card), color-mix(in srgb, var(--primary) 5%, var(--card))); }
+.ai-usage-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
+.ai-usage-heading h2 { display: flex; align-items: center; gap: 9px; margin: 8px 0; font-family: var(--font-display); font-size: 23px; }
+.ai-usage-heading h2 svg { color: var(--primary); }
+.ai-usage-heading > div > p:last-child, .ai-usage-disclaimer, .ai-usage-empty { color: var(--muted-foreground); font-size: 12px; line-height: 1.6; }
+.ai-usage-date { color: var(--muted-foreground); font-size: 11px; white-space: nowrap; }
+.ai-provider-usage-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.ai-provider-usage-card { min-width: 0; padding: 18px; border: 1px solid var(--border); background: var(--card); box-shadow: 0 8px 24px rgb(0 0 0 / 4%); }
+.ai-provider-usage-heading, .ai-usage-limit, .ai-feature-usage li { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.ai-provider-usage-heading h3 { margin: 0; text-transform: capitalize; font-family: var(--font-display); font-size: 19px; }
+.ai-provider-usage-heading span { display: block; margin-top: 4px; color: var(--muted-foreground); font-size: 10px; }
+.ai-provider-usage-heading strong { font-family: var(--font-display); font-size: 28px; }
+.ai-usage-limit { margin-top: 17px; color: var(--muted-foreground); font-size: 11px; }
+.ai-usage-limit b { color: var(--foreground); }
+.ai-provider-usage-card progress { width: 100%; height: 8px; margin-top: 10px; accent-color: var(--primary); }
+.ai-provider-usage-card progress.near-limit { accent-color: #d97706; }
+.ai-feature-usage { display: grid; gap: 6px; margin: 14px 0 0; padding: 0; list-style: none; }
+.ai-feature-usage li { color: var(--muted-foreground); font-size: 11px; text-transform: capitalize; }
+.ai-feature-usage b { color: var(--foreground); }
+.ai-usage-empty { margin: 14px 0 0; }
+.ai-usage-disclaimer { margin: 16px 0 0; }
 .background-job-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .background-job-heading h2, .csv-import-panel h2 { margin: 0; font-family: var(--font-display); font-size: 19px; }
 .background-job-heading p, .job-result { color: var(--muted-foreground); font-size: 11px; }

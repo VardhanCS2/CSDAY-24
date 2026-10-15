@@ -12,6 +12,7 @@ from app.core.security import create_access_token
 from app.database.database import get_db
 from app.main import app
 from app.services import ai_features_service as features
+from app.services import product_categories
 from app.services.ai_chat_service import AIProvider, CatalogSearchResult
 
 
@@ -26,6 +27,18 @@ class MemoryRedis:
     def set(self, key, value, ex):
         self.values[key] = value
         self.expirations[key] = ex
+
+    def incr(self, key):
+        self.values[key] = int(self.values.get(key, 0)) + 1
+        return self.values[key]
+
+    def decr(self, key):
+        self.values[key] = int(self.values.get(key, 0)) - 1
+        return self.values[key]
+
+    def expire(self, key, seconds):
+        self.expirations[key] = seconds
+        return True
 
 
 class FakeProductQuery:
@@ -66,6 +79,43 @@ def test_ai_response_cache_uses_configured_ttl_and_survives_redis_outages(monkey
     monkeypatch.setattr(features, "redis_client", FailedRedis())
     assert features.get_cached_value("ai:offline") is None
     features.set_cached_value("ai:offline", {"answer": "not cached"})
+
+
+def test_ai_provider_usage_enforces_daily_limits_and_reports_usage(monkeypatch):
+    from app.services import ai_governance
+
+    cache = MemoryRedis()
+    monkeypatch.setattr(ai_governance, "redis_client", cache)
+    monkeypatch.setattr(
+        ai_governance.settings,
+        "AI_PROVIDER_DAILY_QUOTAS",
+        {"groq": 1},
+    )
+
+    assert ai_governance.record_ai_provider_request("groq", "chat_stream") == 1
+    with pytest.raises(ai_governance.AIProviderQuotaExceeded, match="daily request limit"):
+        ai_governance.record_ai_provider_request("groq", "chat_stream")
+
+    summary = ai_governance.get_ai_usage_summary()
+    groq = next(provider for provider in summary["providers"] if provider["provider"] == "groq")
+    assert groq["provider"] == "groq"
+    assert groq["requests"] == 1
+    assert groq["daily_limit"] == 1
+    assert groq["feature_requests"]["chat_stream"] == 1
+    assert cache.expirations[next(key for key in cache.expirations if key.startswith("ai:usage:"))] == 48 * 60 * 60
+
+
+def test_ai_usage_dashboard_is_admin_only(client, auth_headers, customer_headers, monkeypatch):
+    monkeypatch.setattr(
+        ai_chat,
+        "get_ai_usage_summary",
+        lambda: {"date_utc": "2026-10-13", "providers": []},
+    )
+
+    response = client.get("/ai/admin/usage", headers=auth_headers)
+    assert response.status_code == 200
+    assert response.json()["data"]["date_utc"] == "2026-10-13"
+    assert client.get("/ai/admin/usage", headers=customer_headers).status_code == 403
 
 
 def test_embedding_provider_fallback_orders_and_validates_vectors():
@@ -135,6 +185,19 @@ def test_semantic_search_indexes_real_vectors_and_updates_changed_products(tmp_p
     coffee.description = "A lightweight travel mug for hot drinks."
     features.semantic_search_products(db, "morning brew")
     assert len(collection.get(include=["metadatas"])["ids"]) == 2
+
+
+def test_product_categories_are_manual_standard_choices():
+    assert product_categories.canonicalize_product_categories(["Mobiles", "Shoes"]) == [
+        "Electronics",
+        "Footwear",
+    ]
+    with pytest.raises(ValueError, match="no more than 3"):
+        product_categories.canonicalize_product_categories(
+            ["Electronics", "Footwear", "Clothing", "Furniture"]
+        )
+    with pytest.raises(ValueError, match="Unsupported product category"):
+        product_categories.canonicalize_product_categories(["A category guessed from description"])
 
 
 def test_content_moderation_fails_over_and_caches_decision(monkeypatch):
@@ -245,6 +308,170 @@ def test_description_generation_logs_sanitized_http_status_for_each_failed_provi
     assert "private provider response text" not in caplog.text
 
 
+def test_structured_product_generation_only_keeps_supplied_feature_facts(monkeypatch):
+    monkeypatch.setattr(features, "redis_client", MemoryRedis())
+    monkeypatch.setattr(features, "configured_providers", lambda: [
+        AIProvider("groq", "test-key", "model", "https://provider.test/chat"),
+    ])
+    generation_options = {}
+
+    def complete(_messages, _providers, _client, **kwargs):
+        generation_options.update(kwargs)
+        return {
+            "content": "A phone with the stated memory and storage."
+        }
+
+    monkeypatch.setattr(
+        features,
+        "_complete_with_fallback",
+        complete,
+    )
+
+    result = features.generate_product_content(
+        "Example phone",
+        400,
+        brand="Example",
+        category="Mobile",
+        feature_details="8GB RAM, 256GB storage",
+    )
+
+    assert result == {
+        "description": "A phone with the stated memory and storage.",
+        "features": "- 8GB RAM\n- 256GB storage",
+        "generation_mode": "ai",
+    }
+    assert generation_options["timeout_seconds"] == 12.0
+
+
+def test_product_content_generation_accepts_plain_text_from_provider(monkeypatch):
+    monkeypatch.setattr(features, "redis_client", MemoryRedis())
+    monkeypatch.setattr(features, "configured_providers", lambda: [
+        AIProvider("groq", "test-key", "model", "https://provider.test/chat"),
+    ])
+    source_features = (
+        "Brand: Nothing\n"
+        "Display: AMOLED\n"
+        "Screen Size: 6.7 inches\n"
+        "RAM: 12 GB\n"
+        "Storage: 256 GB\n"
+        "Rear Camera: 50 MP\n"
+        "Front Camera: 32 MP\n"
+        "Battery: 5,000 mAh\n"
+        "Charging: Fast charging\n"
+        "Operating System: Android\n"
+        "Connectivity: 5G, Wi-Fi, Bluetooth\n"
+        "Design: Transparent-inspired design"
+    )
+    monkeypatch.setattr(
+        features,
+        "_complete_with_fallback",
+        lambda *_args, **_kwargs: {
+            "content": "A Nothing smartphone featuring the specifications you provided."
+        },
+    )
+
+    result = features.generate_product_content(
+        "Nothing Phone",
+        500,
+        feature_details=source_features,
+    )
+
+    assert result["description"] == "A Nothing smartphone featuring the specifications you provided."
+    assert result["features"] == "\n".join(
+        f"- {line}" for line in source_features.splitlines()
+    )
+    assert result["generation_mode"] == "ai"
+
+
+def test_structured_product_generation_preserves_every_supplied_feature(monkeypatch):
+    monkeypatch.setattr(features, "redis_client", MemoryRedis())
+    monkeypatch.setattr(features, "configured_providers", lambda: [
+        AIProvider("groq", "test-key", "model", "https://provider.test/chat"),
+    ])
+    monkeypatch.setattr(
+        features,
+        "_complete_with_fallback",
+        lambda *_args, **_kwargs: {
+            "content": json.dumps({
+                "description": "A scented candle with the listed details.",
+                "features": "- Vanilla fragrance\n- Soy wax",
+            })
+        },
+    )
+    source_features = (
+        "Fragrance: Vanilla\n"
+        "Wax Type: Soy Wax\n"
+        "Weight: 200 g\n"
+        "Burning Time: Up to 40 hours\n"
+        "Container: Glass Jar\n"
+        "Color: RED\n"
+        "Wick Type: Cotton\n"
+        "Usage: Home decor, relaxation, gifting\n"
+        "Special Feature: Smokeless design\n"
+        "Package Contents: 12scented candle"
+    )
+
+    result = features.generate_product_content(
+        "Scented candle",
+        50,
+        feature_details=source_features,
+    )
+
+    assert result["features"] == "\n".join(
+        f"- {line}" for line in source_features.splitlines()
+    )
+
+
+@pytest.mark.parametrize("providers", [[], [
+    AIProvider("groq", "test-key", "model", "https://provider.test/chat"),
+]])
+def test_product_content_generation_falls_back_to_only_supplied_details(
+    monkeypatch,
+    providers,
+):
+    monkeypatch.setattr(features, "redis_client", MemoryRedis())
+    monkeypatch.setattr(features, "configured_providers", lambda: providers)
+    monkeypatch.setattr(
+        features,
+        "_complete_with_fallback",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            features.AIServiceUnavailableError("All configured AI providers failed.")
+        ),
+    )
+
+    result = features.generate_product_content(
+        "Scented candle",
+        50,
+        category="Home & Kitchen",
+        feature_details="Fragrance: Vanilla\nWax Type: Soy Wax\nWeight: 200 g",
+    )
+
+    assert result == {
+        "description": (
+            "Scented candle is listed with these supplied details: "
+            "Fragrance: Vanilla; Wax Type: Soy Wax; Weight: 200 g."
+        ),
+        "features": "- Fragrance: Vanilla\n- Wax Type: Soy Wax\n- Weight: 200 g",
+        "generation_mode": "source_fallback",
+    }
+
+
+def test_product_content_generation_without_ai_keeps_admin_description(monkeypatch):
+    monkeypatch.setattr(features, "redis_client", MemoryRedis())
+    monkeypatch.setattr(features, "configured_providers", lambda: [])
+
+    result = features.generate_product_content(
+        "Scented candle",
+        50,
+        feature_details="Fragrance: Vanilla",
+        existing_description="Admin-written factual copy.",
+    )
+
+    assert result["description"] == "Admin-written factual copy."
+    assert result["features"] == "- Fragrance: Vanilla"
+    assert result["generation_mode"] == "source_fallback"
+
+
 def test_product_search_agent_executes_only_the_whitelisted_catalogue_tool(monkeypatch):
     monkeypatch.setattr(features, "configured_providers", lambda: [
         AIProvider("mistral", "test-key", "model", "https://provider.test/chat"),
@@ -342,6 +569,84 @@ def test_ai_endpoints_require_admin_for_description_generation_and_moderate_prod
     assert generated.json()["data"]["description"] == "A safe draft."
     assert rejected.status_code == 422
     assert "content moderation" in rejected.json()["detail"]
+
+
+def test_structured_product_generation_endpoint_returns_editable_sections(monkeypatch):
+    app.dependency_overrides[get_current_admin] = lambda: SimpleNamespace(id=1)
+    limiter.enabled = True
+    monkeypatch.setattr(
+        ai_chat,
+        "generate_product_content",
+        lambda *_args, **_kwargs: {
+            "description": "A grounded product description.",
+            "features": "- 8GB RAM",
+            "generation_mode": "ai",
+        },
+    )
+    try:
+        response = TestClient(app).post(
+            "/ai/products/generate-content",
+            json={
+                "name": "Example laptop",
+                "brand": "Example",
+                "category": "Laptops",
+                "price": 1200,
+                "stock": 3,
+                "features": "8GB RAM",
+            },
+        )
+        assert response.status_code == 200
+        assert response.json()["data"] == {
+            "description": "A grounded product description.",
+            "features": "- 8GB RAM",
+            "generation_mode": "ai",
+        }
+        monkeypatch.setattr(
+            ai_chat,
+            "generate_product_content",
+            lambda *_args, **_kwargs: (_ for _ in ()).throw(
+                features.AIServiceUnavailableError("All configured AI providers failed.")
+            ),
+        )
+        unavailable = TestClient(app).post(
+            "/ai/products/generate-content",
+            json={"name": "Example laptop", "price": 1200},
+        )
+    finally:
+        limiter.enabled = False
+        app.dependency_overrides.pop(get_current_admin, None)
+    assert unavailable.status_code == 503
+    assert "providers failed" in unavailable.json()["detail"]
+
+
+def test_product_content_endpoint_returns_grounded_draft_when_no_ai_provider_is_configured(monkeypatch):
+    app.dependency_overrides[get_current_admin] = lambda: SimpleNamespace(id=1)
+    monkeypatch.setattr(features, "configured_providers", lambda: [])
+    monkeypatch.setattr(features, "redis_client", MemoryRedis())
+    try:
+        response = TestClient(app).post(
+            "/ai/products/generate-content",
+            json={
+                "name": "Vanilla candle",
+                "brand": "House Goods",
+                "category": "Home & Kitchen",
+                "price": 30,
+                "stock": 2,
+                "features": "Fragrance: Vanilla\nWax Type: Soy Wax",
+            },
+        )
+    finally:
+        app.dependency_overrides.pop(get_current_admin, None)
+
+    assert response.status_code == 200
+    assert response.json()["data"] == {
+        "description": (
+            "Vanilla candle is listed with these supplied details: "
+            "Fragrance: Vanilla; Wax Type: Soy Wax."
+        ),
+        "features": "- Fragrance: Vanilla\n- Wax Type: Soy Wax",
+        "generation_mode": "source_fallback",
+    }
 
 
 def test_description_generation_returns_rate_limit_headers_when_limiter_is_enabled(monkeypatch):

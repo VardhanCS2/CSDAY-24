@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { PRODUCT_CATEGORIES } from '@/lib/product-categories'
 import type { ShippingAddress } from '@/types/models'
 
 const emailField = z.string().trim().email('Enter a valid email address.')
@@ -21,6 +22,12 @@ export const registerSchema = z.object({
 export const productSchema = z.object({
   name: z.string().trim().min(1, 'Product name is required.').max(100, 'Name must be 100 characters or fewer.'),
   description: z.string().trim().max(2000, 'Description must be 2,000 characters or fewer.'),
+  brand: z.string().trim().max(100, 'Brand must be 100 characters or fewer.').default(''),
+  categories: z.array(z.string()).max(3, 'A product can have at most 3 categories.')
+    .refine((categories) => categories.every((category) => PRODUCT_CATEGORIES.some((item) => item.name === category)),
+      'Choose categories from the standard category list.')
+    .default([]),
+  features: z.string().trim().max(4000, 'Features must be 4,000 characters or fewer.').default(''),
   price: z.string()
     .trim()
     .min(1, 'Price is required.')

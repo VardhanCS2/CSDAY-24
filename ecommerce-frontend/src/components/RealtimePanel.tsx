@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { Bell, MessageCircle, Send } from 'lucide-react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import { api, responseData } from '@/api/client'
 import { useWebSocket, type WebSocketStatus } from '@/hooks/use-web-socket'
@@ -30,6 +31,7 @@ export function RealtimePanel() {
   const user = useAuthStore((state) => state.user)
   const token = useAuthStore((state) => state.token)
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
   const [notificationsOpen, setNotificationsOpen] = useState(false)
   const [chatOpen, setChatOpen] = useState(false)
   const [unreadNotifications, setUnreadNotifications] = useState(0)
@@ -48,7 +50,7 @@ export function RealtimePanel() {
   const historyQuery = useQuery({
     queryKey: ['chats', user?.id, user?.role],
     queryFn: async () => responseData<ChatMessage[]>(await api.get('/chats/')),
-    enabled: Boolean(user && chatOpen),
+    enabled: Boolean(user && user.role !== 'admin' && chatOpen),
   })
 
   const messages = useMemo(() => {
@@ -189,14 +191,18 @@ export function RealtimePanel() {
         <button
           type="button"
           className="icon-button realtime-toggle"
-          aria-label={userRole === 'admin' ? 'Open customer conversations' : 'Open live support'}
+          aria-label={userRole === 'admin' ? 'Open customer chat inbox' : 'Open live support'}
           aria-expanded={chatOpen}
-          onClick={() => { setChatOpen((value) => !value); setUnreadMessages(0) }}
+          onClick={() => {
+            setUnreadMessages(0)
+            if (userRole === 'admin') navigate('/admin/chats')
+            else setChatOpen((value) => !value)
+          }}
         >
           <MessageCircle size={18} />
           {unreadMessages > 0 && <span className="realtime-unread">{unreadMessages > 9 ? '9+' : unreadMessages}</span>}
         </button>
-        {chatOpen && (
+        {chatOpen && userRole !== 'admin' && (
           <section className="realtime-popover realtime-chat-popover" aria-label={userRole === 'admin' ? 'Customer conversations' : 'Live support'}>
             <div className="realtime-heading">
               <div><strong>{userRole === 'admin' ? 'Customer conversations' : 'Live support'}</strong><span className={`realtime-status ${status}`}>{statusLabel(status)}</span></div>

@@ -50,6 +50,178 @@ def test_create_product(client, auth_headers):
     assert deleted.status_code == 200
 
 
+def test_product_content_fields_are_saved_updated_and_searchable(client, auth_headers):
+    created = client.post(
+        "/products/",
+        headers=auth_headers,
+        data={
+            "name": "Example programming laptop",
+            "brand": "Example",
+            "category": "Laptops",
+            "description": "Portable computer.",
+            "feature_details": "16GB RAM, 512GB storage",
+            "features": "16GB RAM\n512GB storage",
+            "specifications": '{"RAM":"16GB","Storage":"512GB"}',
+            "price": "1200",
+            "stock": "4",
+        },
+    )
+    assert created.status_code == 200
+    product_id = created.json()["data"]["id"]
+    assert created.json()["data"]["specifications"] == {"RAM": "16GB", "Storage": "512GB"}
+
+    try:
+        updated = client.put(
+            f"/products/{product_id}",
+            headers=auth_headers,
+            json={"features": "16GB RAM\n512GB SSD", "specifications": {"Memory": "16GB"}},
+        )
+        assert updated.status_code == 200
+        assert updated.json()["data"]["features"] == "16GB RAM\n512GB SSD"
+        assert updated.json()["data"]["specifications"] == {"Memory": "16GB"}
+
+        searched = client.get("/products/?search=512GB")
+        assert searched.status_code == 200
+        assert any(
+            item["id"] == product_id
+            for item in searched.json()["data"]["items"]
+        )
+        retrieved = client.get(f"/products/{product_id}")
+        assert retrieved.status_code == 200
+        assert retrieved.json()["data"]["category"] == "Electronics"
+        assert retrieved.json()["data"]["specifications"] == {"Memory": "16GB"}
+    finally:
+        assert client.delete(f"/products/{product_id}", headers=auth_headers).status_code == 200
+
+
+def test_product_search_normalizes_brand_aliases_and_compact_model_spacing(client, auth_headers):
+    created = client.post(
+        "/products/",
+        headers=auth_headers,
+        data={
+            "name": "Motorola Edge 60",
+            "brand": "Motorola",
+            "category": "Mobiles",
+            "description": "5G smartphone",
+            "price": "30000",
+            "stock": "2",
+        },
+    )
+    assert created.status_code == 200
+    product_id = created.json()["data"]["id"]
+
+    try:
+        for search_term in ("Moto Edge 60", "moto edge60", "MOTOROLA EDGE 60"):
+            response = client.get("/products/", params={"search": search_term})
+            assert response.status_code == 200
+            assert any(item["id"] == product_id for item in response.json()["data"]["items"])
+    finally:
+        assert client.delete(f"/products/{product_id}", headers=auth_headers).status_code == 200
+
+
+def test_category_catalog_is_stable_and_product_filters_include_legacy_categories(client, auth_headers):
+    categories = client.get("/products/categories")
+    assert categories.status_code == 200
+    category_names = {item["name"] for item in categories.json()["data"]}
+    assert {"Electronics", "Footwear", "Furniture", "Other"}.issubset(category_names)
+    assert not {
+        "Beauty & Personal Care",
+        "Sports & Outdoors",
+        "Grocery",
+    }.intersection(category_names)
+
+    created_ids = []
+    for name, category in (
+        ("Test mobile", "Mobiles"),
+        ("Test shoes", "Footwear"),
+    ):
+        response = client.post(
+            "/products/",
+            headers=auth_headers,
+            data={
+                "name": name,
+                "description": f"Test item in {category}",
+                "category": category,
+                "price": "10",
+                "stock": "1",
+            },
+        )
+        assert response.status_code == 200
+        created_ids.append(response.json()["data"]["id"])
+
+    try:
+        electronics = client.get("/products/", params={"category": "Electronics", "limit": 100})
+        footwear = client.get("/products/", params={"category": "Footwear", "limit": 100})
+        assert electronics.status_code == 200
+        assert footwear.status_code == 200
+        assert created_ids[0] in {item["id"] for item in electronics.json()["data"]["items"]}
+        assert created_ids[1] not in {item["id"] for item in electronics.json()["data"]["items"]}
+        assert created_ids[1] in {item["id"] for item in footwear.json()["data"]["items"]}
+    finally:
+        for product_id in created_ids:
+            assert client.delete(f"/products/{product_id}", headers=auth_headers).status_code == 200
+
+
+def test_product_creation_does_not_infer_categories_from_description(client, auth_headers):
+    created = client.post(
+        "/products/",
+        headers=auth_headers,
+        data={
+            "name": "Uncategorized device",
+            "description": "A compact electronic gadget.",
+            "price": "10",
+            "stock": "1",
+        },
+    )
+
+    assert created.status_code == 200
+    product_id = created.json()["data"]["id"]
+    assert created.json()["data"]["category"] is None
+    assert created.json()["data"]["categories"] == []
+    assert client.delete(f"/products/{product_id}", headers=auth_headers).status_code == 200
+
+
+def test_product_creation_saves_only_admin_selected_categories_and_limits_to_three(client, auth_headers):
+    created = client.post(
+        "/products/",
+        headers=auth_headers,
+        data={
+            "name": "Multi-category product",
+            "description": "A shoe with a camera and book illustration.",
+            "category": "Electronics",
+            "categories": '["Electronics", "Footwear", "Accessories"]',
+            "price": "10",
+            "stock": "1",
+        },
+    )
+    assert created.status_code == 200
+    product_id = created.json()["data"]["id"]
+    assert created.json()["data"]["categories"] == ["Electronics", "Footwear", "Accessories"]
+    assert created.json()["data"]["category"] == "Electronics"
+
+    try:
+        for category in ("Electronics", "Footwear", "Accessories"):
+            response = client.get(
+                "/products/",
+                params={"category": category, "limit": 100},
+            )
+            assert product_id in {item["id"] for item in response.json()["data"]["items"]}
+    finally:
+        assert client.delete(f"/products/{product_id}", headers=auth_headers).status_code == 200
+
+    too_many = client.post(
+        "/products/",
+        headers=auth_headers,
+        data={
+            "name": "Too many categories",
+            "categories": '["Electronics", "Footwear", "Clothing", "Furniture"]',
+            "price": "10",
+            "stock": "1",
+        },
+    )
+    assert too_many.status_code == 422
+
+
 def test_delete_product(client, auth_headers):
 
     created = client.post(

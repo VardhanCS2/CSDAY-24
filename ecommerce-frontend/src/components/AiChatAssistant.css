@@ -42,7 +42,8 @@
 .ai-sources-label { color: var(--muted-foreground); font-size: 9px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
 .ai-chat-source { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--card); color: var(--foreground); text-decoration: none; }
 .ai-chat-source:hover { border-color: #8ca18c; }
-.ai-chat-source > span:first-child { display: grid; gap: 3px; min-width: 0; }
+.ai-chat-source-image { width: 42px; height: 42px; flex: 0 0 auto; border-radius: 4px; object-fit: cover; }
+.ai-chat-source > span:first-of-type { display: grid; gap: 3px; min-width: 0; }
 .ai-chat-source strong { overflow: hidden; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 .ai-chat-source small { color: var(--muted-foreground); font-size: 9px; }
 .ai-source-price { flex: 0 0 auto; font-size: 10px; font-weight: 700; }

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom'
+import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { ArrowUpRight, LogOut, Menu, Moon, ShoppingBag, Sun, UserRound, X } from 'lucide-react'
 import { Toaster } from 'sonner'
 import { useAuth } from '@/hooks/useAuth'
@@ -17,6 +17,8 @@ export function StoreLayout() {
   const { user, logout } = useAuth()
   const cartCount = useCartStore((state) => state.items.reduce((sum, item) => sum + item.quantity, 0))
   const navigate = useNavigate()
+  const location = useLocation()
+  const isAdminChatsPage = location.pathname === '/admin/chats'
   const [dark, setDark] = useState(() => localStorage.getItem('theme') === 'dark')
   const [menuOpen, setMenuOpen] = useState(false)
 
@@ -62,7 +64,7 @@ export function StoreLayout() {
         </div>
       </header>
       <Outlet />
-      <AiChatAssistant />
+      {!isAdminChatsPage && <AiChatAssistant />}
       <footer className="site-footer"><Link to="/" className="footer-brand">common goods</Link><span>Everyday essentials, made more considered.</span><a href={apiDocsUrl} target="_blank" rel="noreferrer">API docs <ArrowUpRight size={13} /></a></footer>
     </div>
   )

@@ -1,15 +1,20 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
+import axios from 'axios'
 import { ImagePlus, Link2, Sparkles, Upload } from 'lucide-react'
 import { toast } from 'sonner'
 import { ProductImage } from '@/components/ProductImage'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { api, errorMessage, responseData } from '@/api/client'
+import { PRODUCT_CATEGORIES } from '@/lib/product-categories'
 import { productSchema } from '@/lib/validation'
-import type { Product } from '@/types/models'
+import type { BackgroundJob, Product } from '@/types/models'
 import type { z } from 'zod'
 
 type ProductValues = z.infer<typeof productSchema>
+
+const AI_JOB_POLL_INTERVAL_MS = 750
+const AI_JOB_MAX_POLL_ATTEMPTS = 80
 
 export interface ProductEditorValues {
   values: ProductValues
@@ -27,13 +32,17 @@ interface AdminProductEditorProps {
 export function AdminProductEditor({ product, saving, onCancel, onSave }: AdminProductEditorProps) {
   const [name, setName] = useState(product?.name ?? '')
   const [description, setDescription] = useState(product?.description ?? '')
+  const [brand, setBrand] = useState(product?.brand ?? '')
+  const [categories, setCategories] = useState<string[]>(product?.categories ?? [])
+  const [features, setFeatures] = useState(product?.features || product?.feature_details || '')
   const [price, setPrice] = useState(product ? String(product.price) : '')
   const [stock, setStock] = useState(product ? String(product.stock) : '')
   const [imageUrl, setImageUrl] = useState(product?.image_url?.startsWith('http') ? product.image_url : '')
   const [imageMode, setImageMode] = useState<'url' | 'upload'>(product?.image_url?.startsWith('http') ? 'url' : 'upload')
   const [image, setImage] = useState<File | null>(null)
   const [imageError, setImageError] = useState('')
-  const [generatingDescription, setGeneratingDescription] = useState(false)
+  const [contentError, setContentError] = useState('')
+  const [generatingContent, setGeneratingContent] = useState(false)
   const [previewStatus, setPreviewStatus] = useState<'pending' | 'ready' | 'failed'>('pending')
   const uploadPreviewRef = useRef<HTMLImageElement>(null)
   const urlIsValid = productSchema.shape.image_url.safeParse(imageUrl).success
@@ -48,7 +57,10 @@ export function AdminProductEditor({ product, saving, onCancel, onSave }: AdminP
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setImageError('')
-    const parsed = productSchema.safeParse({ name, description, price, stock, image_url: imageUrl })
+    setContentError('')
+    const parsed = productSchema.safeParse({
+      name, description, brand, categories, features, price, stock, image_url: imageUrl,
+    })
     if (!parsed.success) {
       toast.error(parsed.error.issues[0]?.message ?? 'Check the product details.')
       return
@@ -72,31 +84,83 @@ export function AdminProductEditor({ product, saving, onCancel, onSave }: AdminP
     })
   }
 
-  async function generateDescription() {
+  async function generateContent() {
     const numericPrice = Number(price)
     if (!name.trim() || !Number.isFinite(numericPrice) || numericPrice < 0) {
-      const message = 'Enter a product name and valid price before generating a description.'
-      setImageError(message)
+      const message = 'Enter a product name and valid price before generating product content.'
+      setContentError(message)
       toast.error(message)
       return
     }
-    setGeneratingDescription(true)
-    setImageError('')
+    if (
+      (description.trim() || features.trim())
+      && !window.confirm('Replace the current description and features with a new draft?')
+    ) return
+
+    setGeneratingContent(true)
+    setContentError('')
     try {
-      const response = await api.post('/ai/products/generate-description', {
+      const response = await api.post('/ai/products/generate-content/jobs', {
         name: name.trim(),
         price: numericPrice,
-        details: description,
+        stock: Number(stock) || 0,
+        brand: brand.trim() || null,
+        category: categories.join(', ') || null,
+        features: features.trim() || null,
+        existing_description: description.trim() || null,
       })
-      const result = responseData<{ description: string }>(response)
+      const queuedJob = responseData<{ id: string }>(response)
+      let result: {
+        description: string
+        features: string
+        generation_mode?: 'ai' | 'source_fallback'
+      } | null = null
+      for (let attempt = 0; attempt < AI_JOB_MAX_POLL_ATTEMPTS; attempt += 1) {
+        if (attempt > 0) {
+          await new Promise((resolve) => window.setTimeout(resolve, AI_JOB_POLL_INTERVAL_MS))
+        }
+        const job = responseData<BackgroundJob>(
+          await api.get(`/jobs/${encodeURIComponent(queuedJob.id)}`),
+        )
+        if (job.status === 'failed') {
+          throw new Error(job.error || 'AI product content generation failed.')
+        }
+        if (job.status === 'completed') {
+          if (
+            typeof job.result?.description !== 'string'
+            || typeof job.result.features !== 'string'
+          ) {
+            throw new Error('The AI job completed without valid product content.')
+          }
+          const generationMode = job.result.generation_mode
+          result = {
+            description: job.result.description,
+            features: job.result.features,
+            ...(generationMode === 'ai' || generationMode === 'source_fallback'
+              ? { generation_mode: generationMode }
+              : {}),
+          }
+          break
+        }
+      }
+      if (!result) {
+        throw new Error('Generation is still running. Check the Background Jobs page for its status.')
+      }
       setDescription(result.description)
-      toast.success('Description draft generated. Review it before saving.')
+      setFeatures(result.features)
+      toast.success(
+        result.generation_mode === 'source_fallback'
+          ? 'AI providers are unavailable. A draft using only your supplied details is ready to review.'
+          : 'Description and features generated. Review and edit before saving.',
+      )
     } catch (error) {
-      const message = errorMessage(error)
-      setImageError(message)
+      const message = axios.isAxiosError(error) && ['ECONNABORTED', 'ETIMEDOUT'].includes(error.code ?? '')
+        ? 'Generation took too long. Please try again; the product details are still in the form.'
+        : errorMessage(error)
+      setContentError(message)
       toast.error(message)
     } finally {
-      setGeneratingDescription(false)
+      setGeneratingContent(false)
     }
   }
 
@@ -114,14 +178,40 @@ export function AdminProductEditor({ product, saving, onCancel, onSave }: AdminP
     <form className="admin-product-editor" onSubmit={submit}>
       <div className="admin-editor-fields">
         <label className="form-field"><span>Product name</span><Input value={name} onChange={(event) => setName(event.target.value)} required maxLength={100} /></label>
+        <label className="form-field"><span>Brand</span><Input value={brand} onChange={(event) => setBrand(event.target.value)} maxLength={100} /></label>
+        <fieldset className="form-field admin-category-picker">
+          <legend>Categories <span>(select up to 3 manually)</span></legend>
+          <div className="admin-category-options">
+            {PRODUCT_CATEGORIES.map((item) => {
+              const selected = categories.includes(item.name)
+              return (
+                <label key={item.name} className={`admin-category-option${selected ? ' is-selected' : ''}`}>
+                  <input
+                    type="checkbox"
+                    checked={selected}
+                    disabled={!selected && categories.length >= 3}
+                    onChange={(event) => setCategories((current) => event.target.checked
+                      ? [...current, item.name]
+                      : current.filter((categoryName) => categoryName !== item.name))}
+                  />
+                  <span>{item.name}</span>
+                </label>
+              )
+            })}
+          </div>
+          {categories.length >= 3 && <small className="form-hint">You can select up to three categories.</small>}
+        </fieldset>
         <label className="form-field"><span>Price</span><Input type="number" min="0" step="0.01" value={price} onChange={(event) => setPrice(event.target.value)} required /></label>
         <label className="form-field"><span>Stock</span><Input type="number" min="0" step="1" value={stock} onChange={(event) => setStock(event.target.value)} required /></label>
         <div className="form-field admin-editor-description">
           <label htmlFor="admin-product-description">Description</label>
-          <Input id="admin-product-description" value={description} onChange={(event) => setDescription(event.target.value)} maxLength={2000} />
-          <Button type="button" variant="outline" size="sm" onClick={() => void generateDescription()} disabled={generatingDescription || saving || !name.trim() || !price}>
-            <Sparkles size={14} /> {generatingDescription ? 'Generating...' : 'Generate with AI'}
+          <textarea id="admin-product-description" className="ui-input admin-textarea" value={description} onChange={(event) => setDescription(event.target.value)} maxLength={2000} />
+          <label htmlFor="admin-product-features">Features</label>
+          <textarea id="admin-product-features" className="ui-input admin-textarea" value={features} onChange={(event) => setFeatures(event.target.value)} maxLength={4000} placeholder="Add product details, preferably one detail per line" />
+          <Button type="button" variant="outline" size="sm" onClick={() => void generateContent()} disabled={generatingContent || saving || !name.trim() || !price}>
+            <Sparkles size={14} /> {generatingContent ? 'Generating...' : 'AI Generate Description & Features'}
           </Button>
+          {contentError && <p className="form-message error-text" role="alert">{contentError}</p>}
         </div>
       </div>
       <fieldset className="admin-image-picker">

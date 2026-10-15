@@ -1,20 +1,56 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { ArrowDown, ArrowRight, ArrowUpDown, Search, ShoppingBag, SlidersHorizontal } from 'lucide-react'
+import {
+  Armchair,
+  ArrowDown,
+  ArrowRight,
+  ArrowUpDown,
+  Bike,
+  BookOpen,
+  CookingPot,
+  Footprints,
+  Grid2X2,
+  Laptop,
+  Puzzle,
+  Search,
+  Shirt,
+  ShoppingBag,
+  ShoppingBasket,
+  Shapes,
+  SlidersHorizontal,
+  Sparkles,
+  Watch,
+  type LucideIcon,
+} from 'lucide-react'
 import { toast } from 'sonner'
 import { errorMessage } from '@/api/client'
 import { useAuth } from '@/hooks/useAuth'
 import { useCartActions } from '@/hooks/use-cart'
 import { useDebouncedValue } from '@/hooks/use-debounced-value'
 import { useIntersectionObserver } from '@/hooks/use-intersection-observer'
-import { useProducts } from '@/hooks/use-products'
+import { useProductCategories, useProducts } from '@/hooks/use-products'
 import { ProductImage } from '@/components/ProductImage'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { formatPrice } from '@/lib/utils'
+import { PRODUCT_CATEGORIES } from '@/lib/product-categories'
 import type { Product } from '@/types/models'
 
+const CATEGORY_ICONS: Record<string, LucideIcon> = {
+  laptop: Laptop,
+  footprints: Footprints,
+  shirt: Shirt,
+  'cooking-pot': CookingPot,
+  armchair: Armchair,
+  sparkles: Sparkles,
+  bike: Bike,
+  'book-open': BookOpen,
+  puzzle: Puzzle,
+  'shopping-basket': ShoppingBasket,
+  watch: Watch,
+  shapes: Shapes,
+}
 interface ProductCardProps {
   product: Product
   adding: boolean
@@ -40,6 +76,7 @@ export function StorefrontPage() {
   const { user } = useAuth()
   const navigate = useNavigate()
   const [search, setSearch] = useState('')
+  const [category, setCategory] = useState('')
   const [searchFocused, setSearchFocused] = useState(false)
   const [minPrice, setMinPrice] = useState('')
   const [maxPrice, setMaxPrice] = useState('')
@@ -51,11 +88,13 @@ export function StorefrontPage() {
   const filters = useMemo(() => ({
     ...(debouncedSearch ? { search: debouncedSearch } : {}),
     ...(debouncedSearch ? { search_mode: searchMode } : {}),
+    ...(category ? { category } : {}),
     ...(minPrice !== '' ? { min_price: minPrice } : {}),
     ...(maxPrice !== '' ? { max_price: maxPrice } : {}),
     ...(stock !== 'all' ? { stock_available: stock === 'in' } : {}),
-  }), [debouncedSearch, minPrice, maxPrice, stock, searchMode])
+  }), [debouncedSearch, minPrice, maxPrice, stock, searchMode, category])
   const productsQuery = useProducts(filters)
+  const categoriesQuery = useProductCategories()
   const { add } = useCartActions()
   const { hasNextPage, isFetchingNextPage, fetchNextPage } = productsQuery
   const addToCart = add.mutateAsync
@@ -120,6 +159,34 @@ export function StorefrontPage() {
           <div><p className="eyebrow"><span className="eyebrow-line" /> The collection</p><h2>Find your everyday favorite.</h2></div>
           <span className="result-total">{total} {total === 1 ? 'piece' : 'pieces'}</span>
         </div>
+        <nav className="category-strip" aria-label="Shop by category">
+          <div className="category-scroll" role="group" aria-label="Product categories">
+            <button
+              type="button"
+              className={`category-option${category ? '' : ' is-selected'}`}
+              aria-pressed={!category}
+              onClick={() => setCategory('')}
+            >
+              <span className="category-icon"><Grid2X2 size={18} aria-hidden="true" /></span>
+              <span>All products</span>
+            </button>
+            {(categoriesQuery.data?.length ? categoriesQuery.data : PRODUCT_CATEGORIES).map((item) => {
+              const Icon = CATEGORY_ICONS[item.icon] ?? Shapes
+              return (
+                <button
+                  type="button"
+                  key={item.name}
+                  className={`category-option${category === item.name ? ' is-selected' : ''}`}
+                  aria-pressed={category === item.name}
+                  onClick={() => setCategory(item.name)}
+                >
+                  <span className="category-icon"><Icon size={18} aria-hidden="true" /></span>
+                  <span>{item.name}</span>
+                </button>
+              )
+            })}
+          </div>
+        </nav>
         <div className="filter-bar">
           <div className="search-box">
             <label className="search-field"><Search size={17} /><Input aria-label="Search products" placeholder="Search by product, material, or style" value={search} onFocus={() => setSearchFocused(true)} onBlur={() => window.setTimeout(() => setSearchFocused(false), 120)} onKeyDown={(event) => { if (event.key === 'Escape') setSearchFocused(false) }} onChange={(event) => updateFilter(setSearch, event.target.value)} autoComplete="off" /><kbd>⌕</kbd></label>
@@ -151,7 +218,7 @@ export function StorefrontPage() {
             {sortedProducts.map((product) => <ProductCard key={product.id} product={product} adding={addingId === product.id} onAdd={addToBag} />)}
           </div>
         ) : (
-          <div className="empty-state"><p className="eyebrow">Nothing here just yet</p><h3>No pieces match those filters.</h3><p>Try a different search or reset your price range.</p><Button variant="outline" onClick={() => { setSearch(''); setMinPrice(''); setMaxPrice(''); setStock('all') }}>Clear filters <ArrowRight size={15} /></Button></div>
+          <div className="empty-state"><p className="eyebrow">Nothing here just yet</p><h3>No pieces match those filters.</h3><p>Try a different search or reset your price range.</p><Button variant="outline" onClick={() => { setSearch(''); setCategory(''); setMinPrice(''); setMaxPrice(''); setStock('all') }}>Clear filters <ArrowRight size={15} /></Button></div>
         )}
 
         {hasNextPage && <div className="pagination" ref={loadMoreRef}><Button variant="outline" size="sm" disabled={isFetchingNextPage} onClick={() => fetchNextPage()}>{isFetchingNextPage ? 'Loading more...' : 'Load more'} <ArrowRight size={14} /></Button></div>}

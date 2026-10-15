@@ -15,6 +15,8 @@ Copy-Item .env.example .env
 
 Set `DATABASE_URL` to the local PostgreSQL database, generate a private `JWT_SECRET_KEY`, and configure Redis URLs for `REDIS_URL`, `CELERY_BROKER_URL`, and `CELERY_RESULT_BACKEND`. The SMTP settings are required by the current settings model; order email work is currently logged by the Celery task. All secrets belong in the ignored `.env` file; never put private values in frontend `VITE_*` settings. The backend ignores unrelated keys in this shared file, including optional `LOCUST_*` load-test settings.
 
+For Docker Compose, copy the repository-root `.env.example` to `.env` before running `docker compose up --build`. Compose requires non-empty `POSTGRES_PASSWORD`, `JWT_SECRET_KEY`, `SMTP_USERNAME`, and `SMTP_PASSWORD` values and will fail rather than use fallback credentials. Use a URL-safe random PostgreSQL password because Compose inserts it into the database URL.
+
 Set `CORS_ORIGINS` to a comma-separated list of exact frontend origins (including scheme and port), for example `http://localhost:5173,http://127.0.0.1:5173`. `ENVIRONMENT` identifies the deployment environment. Never use wildcard origins. The frontend uses `/api` and `/ws` through the Vite development proxy by default; production deployments should set `VITE_API_BASE_URL` and `VITE_WS_BASE_URL` to their API and secure WebSocket endpoints.
 
 ```powershell

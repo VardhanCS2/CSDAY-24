@@ -1,10 +1,12 @@
 from sqlalchemy.orm import Session
 
-from sqlalchemy import case, desc, func, literal, literal_column, or_, text
+from sqlalchemy import String, case, cast, desc, func, literal, literal_column, or_, text
 
 from app.models.order_item import OrderItem
 from app.models.product import Product
 from app.core.config import settings
+from app.services.catalog_search import normalize_catalogue_search_text
+from app.services.product_categories import canonicalize_product_categories
 
 from app.schemas.product import (
     ProductCreate,
@@ -30,12 +32,30 @@ def create_new_product(
     product_data: ProductCreate,
     owner_id: int
 ):
+    assigned_categories = (
+        product_data.categories
+        if product_data.categories
+        else canonicalize_product_categories([product_data.category])
+        if product_data.category
+        else []
+    )
 
     product = Product(
 
         name=product_data.name,
 
         description=product_data.description,
+
+        brand=product_data.brand,
+
+        category=assigned_categories[0] if assigned_categories else None,
+        categories=assigned_categories,
+
+        feature_details=product_data.feature_details,
+
+        features=product_data.features,
+
+        specifications=product_data.specifications,
 
         price=product_data.price,
 
@@ -64,16 +84,21 @@ def get_all_products(
     max_price: float | None = None,
     stock_available: bool | None = None,
     search_mode: str = "hybrid",
+    category: str | None = None,
 ):
 
     query = db.query(Product)
+
+    if category and category.strip():
+        selected_category = canonicalize_product_categories([category])[0]
+        query = query.filter(cast(Product.categories, String).ilike(f'%"{selected_category}"%'))
 
 
 
     # Search by product name or description
 
     if search and search.strip():
-        search_text = search.strip()
+        search_text = normalize_catalogue_search_text(search, settings.AI_PRODUCT_SEARCH_ALIASES)
         search_terms = list(dict.fromkeys(search_text.split()))
 
         def contains_pattern(term: str) -> str:
@@ -85,7 +110,19 @@ def get_all_products(
                 literal_column("'english'"),
                 func.coalesce(Product.name, literal_column("''"))
                 + literal_column("' '")
-                + func.coalesce(Product.description, literal_column("''")),
+                + func.coalesce(Product.description, literal_column("''"))
+                + literal_column("' '")
+                + func.coalesce(Product.brand, literal_column("''"))
+                + literal_column("' '")
+                + func.coalesce(Product.category, literal_column("''"))
+                + literal_column("' '")
+                + func.coalesce(cast(Product.categories, String), literal_column("''"))
+                + literal_column("' '")
+                + func.coalesce(Product.feature_details, literal_column("''"))
+                + literal_column("' '")
+                + func.coalesce(Product.features, literal_column("''"))
+                + literal_column("' '")
+                + func.coalesce(cast(Product.specifications, String), literal_column("''")),
             )
             terms = func.plainto_tsquery("english", search_text)
             full_text_match = vector.op("@@")(terms)
@@ -103,12 +140,22 @@ def get_all_products(
                     for condition in (
                         literal(term).bool_op("<%")(Product.name),
                         literal(term).bool_op("<%")(Product.description),
+                        literal(term).bool_op("<%")(Product.brand),
+                        literal(term).bool_op("<%")(Product.category),
+                        literal(term).bool_op("<%")(cast(Product.categories, String)),
+                        literal(term).bool_op("<%")(Product.feature_details),
+                        literal(term).bool_op("<%")(Product.features),
+                        literal(term).bool_op("<%")(cast(Product.specifications, String)),
                     )
                 ))
                 fuzzy_score = func.greatest(*(
                     func.word_similarity(term, column)
                     for term in fuzzy_terms
-                    for column in (Product.name, Product.description)
+                    for column in (
+                        Product.name, Product.description, Product.brand, Product.category,
+                        cast(Product.categories, String),
+                        Product.feature_details, Product.features, cast(Product.specifications, String),
+                    )
                 ))
             else:
                 fuzzy_match = literal_column("false")
@@ -119,6 +166,12 @@ def get_all_products(
                 for condition in (
                     Product.name.ilike(contains_pattern(term), escape="\\"),
                     Product.description.ilike(contains_pattern(term), escape="\\"),
+                    Product.brand.ilike(contains_pattern(term), escape="\\"),
+                    Product.category.ilike(contains_pattern(term), escape="\\"),
+                    cast(Product.categories, String).ilike(contains_pattern(term), escape="\\"),
+                    Product.feature_details.ilike(contains_pattern(term), escape="\\"),
+                    Product.features.ilike(contains_pattern(term), escape="\\"),
+                    cast(Product.specifications, String).ilike(contains_pattern(term), escape="\\"),
                 )
             ))
             if search_mode == "full_text":
@@ -152,6 +205,12 @@ def get_all_products(
                 for condition in (
                     Product.name.ilike(contains_pattern(term), escape="\\"),
                     Product.description.ilike(contains_pattern(term), escape="\\"),
+                    Product.brand.ilike(contains_pattern(term), escape="\\"),
+                    Product.category.ilike(contains_pattern(term), escape="\\"),
+                    cast(Product.categories, String).ilike(contains_pattern(term), escape="\\"),
+                    Product.feature_details.ilike(contains_pattern(term), escape="\\"),
+                    Product.features.ilike(contains_pattern(term), escape="\\"),
+                    cast(Product.specifications, String).ilike(contains_pattern(term), escape="\\"),
                 )
             ))
 
@@ -235,6 +294,19 @@ def update_existing_product(
     update_data = product_data.model_dump(
         exclude_unset=True
     )
+
+    if "categories" in update_data and update_data["categories"] is not None:
+        update_data["category"] = update_data["categories"][0] if update_data["categories"] else None
+    elif "category" in update_data:
+        update_data["categories"] = (
+            canonicalize_product_categories([update_data["category"]])
+            if update_data["category"]
+            else []
+        )
+        update_data["category"] = update_data["categories"][0] if update_data["categories"] else None
+
+    if update_data.get("specifications") is None and "specifications" in update_data:
+        update_data["specifications"] = {}
 
 
     for key, value in update_data.items():

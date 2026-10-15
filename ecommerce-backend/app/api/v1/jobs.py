@@ -5,12 +5,11 @@ from uuid import uuid4
 from celery.result import AsyncResult
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
-from kombu.exceptions import OperationalError
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_admin, get_current_user
 from app.celery.tasks import PRIVATE_FILES, generate_invoice, import_products_csv
-from app.celery.worker import celery_app
+from app.celery.worker import celery_app, require_celery_worker
 from app.database.database import get_db
 from app.models.background_job import BackgroundJob
 from app.models.order import Order
@@ -37,19 +36,7 @@ def _job_data(job: BackgroundJob) -> dict:
 
 
 def _require_worker() -> None:
-    try:
-        workers = celery_app.control.ping(timeout=1)
-    except OperationalError as error:
-        logger.exception("Unable to contact a Celery worker")
-        raise HTTPException(
-            status_code=503,
-            detail="Background processing is unavailable. Start the Celery worker and try again.",
-        ) from error
-    if not workers:
-        raise HTTPException(
-            status_code=503,
-            detail="No Celery worker is running. Start the worker and try again.",
-        )
+    require_celery_worker()
 
 
 def _refresh_job_state(job: BackgroundJob, db: Session) -> None:

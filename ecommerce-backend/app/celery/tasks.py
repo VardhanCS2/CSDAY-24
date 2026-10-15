@@ -42,6 +42,37 @@ def send_order_email(email: str, order_id: int):
     return "Email queued"
 
 
+@celery_app.task(name="periodic_system_heartbeat")
+def periodic_system_heartbeat():
+    logger.info("Celery Beat heartbeat: background scheduler is active.")
+    return "Heartbeat OK"
+
+
+@celery_app.task(bind=True, name="generate_product_content")
+def generate_product_content_task(self, job_id: str, owner_id: int, values: dict[str, Any]):
+    _save_job(job_id, status="running", progress=10, error=None)
+    self.update_state(state="PROGRESS", meta={"progress": 10})
+    try:
+        from app.services.ai_features_service import generate_product_content
+
+        result = generate_product_content(
+            values["name"],
+            values["price"],
+            brand=values.get("brand"),
+            category=values.get("category"),
+            feature_details=values.get("features"),
+            stock=values.get("stock"),
+            existing_description=values.get("existing_description"),
+            cache_scope=f"user:{owner_id}",
+        )
+        _save_job(job_id, status="completed", progress=100, result=result, error=None)
+        return result
+    except Exception as error:
+        _save_job(job_id, status="failed", error=str(error))
+        logger.exception("AI product content generation failed for job %s", job_id)
+        raise
+
+
 @celery_app.task(bind=True, name="generate_invoice")
 def generate_invoice(self, job_id: str, order_id: int):
     _save_job(job_id, status="running", progress=10, error=None)

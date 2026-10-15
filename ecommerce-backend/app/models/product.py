@@ -5,7 +5,8 @@ from sqlalchemy import (
     Float,
     DateTime,
     ForeignKey,
-    Index
+    Index,
+    JSON,
 )
 
 
@@ -43,6 +44,18 @@ class Product(Base):
         String,
         nullable=True
     )
+
+    brand = Column(String(100), nullable=True)
+
+    category = Column(String(100), nullable=True)
+
+    categories = Column(JSON, nullable=False, default=list)
+
+    feature_details = Column(String, nullable=True)
+
+    features = Column(String, nullable=True)
+
+    specifications = Column(JSON, nullable=False, default=dict)
 
 
 

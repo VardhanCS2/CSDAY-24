@@ -1,5 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import and_, case, func, or_
 from sqlalchemy.orm import Session
+from sqlalchemy.orm import aliased
 
 from app.api.deps import get_current_user
 from app.database.database import get_db
@@ -8,6 +10,57 @@ from app.models.user import User
 from app.utils.response import success_response
 
 router = APIRouter(prefix="/chats", tags=["Chats"])
+
+
+@router.get("/conversations")
+def get_chat_conversations(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Administrator access is required.")
+
+    sender = aliased(User)
+    recipient = aliased(User)
+    customer_id = case(
+        (sender.role == "admin", ChatMessage.recipient_id),
+        else_=ChatMessage.sender_id,
+    )
+    latest_messages = (
+        db.query(
+            func.max(ChatMessage.id).label("message_id"),
+            customer_id.label("customer_id"),
+        )
+        .join(sender, sender.id == ChatMessage.sender_id)
+        .join(recipient, recipient.id == ChatMessage.recipient_id)
+        .filter(
+            or_(
+                and_(sender.role == "admin", recipient.role != "admin"),
+                and_(sender.role != "admin", recipient.role == "admin"),
+            )
+        )
+        .group_by(customer_id)
+        .subquery()
+    )
+    conversations = (
+        db.query(User, ChatMessage)
+        .join(latest_messages, latest_messages.c.customer_id == User.id)
+        .join(ChatMessage, ChatMessage.id == latest_messages.c.message_id)
+        .order_by(ChatMessage.created_at.desc(), ChatMessage.id.desc())
+        .all()
+    )
+    result = [
+        {
+            "customer_id": customer.id,
+            "customer_name": customer.name,
+            "customer_email": customer.email,
+            "last_message": message.text,
+            "last_sender_id": message.sender_id,
+            "last_message_at": message.created_at,
+        }
+        for customer, message in conversations
+    ]
+    return success_response(data=result, message="Chat conversations fetched")
 
 
 @router.get("/")

@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
-import { ArrowRight, CheckCircle2, ClipboardList, PackagePlus, Pencil, RefreshCw, ShieldCheck, Trash2, X } from 'lucide-react'
+import { ArrowRight, CheckCircle2, ClipboardList, MessageCircle, PackagePlus, Pencil, RefreshCw, ShieldCheck, Trash2, X } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
 import { api, errorMessage, responseData } from '@/api/client'
@@ -67,6 +67,12 @@ export function AdminPage() {
         return api.put(`/products/${product.id}`, {
           name: values.name,
           description: values.description || null,
+          brand: values.brand || null,
+          category: values.categories[0] || null,
+          categories: values.categories,
+          feature_details: null,
+          features: values.features || null,
+          specifications: {},
           price: values.price,
           stock: values.stock,
           ...(imageMode === 'url' ? { image_url: values.image_url || null } : {}),
@@ -75,6 +81,10 @@ export function AdminPage() {
       const payload = new FormData()
       payload.append('name', values.name)
       payload.append('description', values.description)
+      payload.append('brand', values.brand)
+      payload.append('category', values.categories[0] || '')
+      payload.append('categories', JSON.stringify(values.categories))
+      payload.append('features', values.features)
       payload.append('price', String(values.price))
       payload.append('stock', String(values.stock))
       if (imageMode === 'url' && values.image_url) payload.append('image_url', values.image_url)
@@ -91,6 +101,12 @@ export function AdminPage() {
       const optimisticProduct = {
         ...product,
         ...submission.values,
+        brand: submission.values.brand || null,
+        category: submission.values.categories[0] || null,
+        categories: submission.values.categories,
+        feature_details: null,
+        specifications: {},
+        features: submission.values.features || null,
         image_url: submission.imageMode === 'url'
           ? submission.values.image_url || null
           : product.image_url,
@@ -239,6 +255,7 @@ export function AdminPage() {
           <button role="tab" aria-selected={section === 'products'} className={section === 'products' ? 'selected' : ''} onClick={() => changeSection('products')}><PackagePlus size={15} /> Products</button>
         </div>
         <div className="admin-actions">
+          <Link className="text-link" to="/admin/chats">Customer chats <MessageCircle size={14} /></Link>
           <Link className="text-link" to="/jobs">Background jobs <ArrowRight size={14} /></Link>
           {section === 'products' && <Button size="sm" onClick={beginCreate}><PackagePlus size={14} /> Add product</Button>}
           <Button variant="outline" size="sm" aria-label="Refresh admin data" title="Refresh" onClick={() => { ordersQuery.refetch(); productsQuery.refetch() }}><RefreshCw size={14} /> Refresh</Button>
